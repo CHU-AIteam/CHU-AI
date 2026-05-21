@@ -111,6 +111,53 @@ class ChatResponse(BaseModel):
     knowledge_mode: str = KNOWLEDGE_MODE_DEFAULT
 
 
+def CompactLogText(text, max_chars=120):
+    """ログ用に改行と長文を短く整える関数"""
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) <= max_chars:
+        return compact
+    return f"{compact[:max_chars]}..."
+
+
+def ExtractCurrentQuestionForLog(text):
+    """履歴付きリクエストから現在の質問だけを取り出す関数"""
+    marker = "【現在の質問】"
+    if marker in text:
+        return text.rsplit(marker, 1)[1].strip()
+    return text.strip()
+
+
+def CountHistoryEntriesForLog(text):
+    """履歴付きリクエスト内の過去会話件数を数える関数"""
+    return len(re.findall(r"(?m)^\d+\.$", text))
+
+
+def FormatUsedFilesForLog(used_files, preview_count=5):
+    """採用knowledge一覧をログ用に短く整える関数"""
+    if not used_files:
+        return "0 files"
+
+    preview = ", ".join(used_files[:preview_count])
+    remaining = len(used_files) - preview_count
+    if remaining > 0:
+        preview = f"{preview}, ... +{remaining} more"
+    return f"{len(used_files)} files [{preview}]"
+
+
+def BuildGeminiPromptForLog(user_text):
+    """Geminiへ送るプロンプトをknowledgeだけ伏せてログ用に作る関数"""
+    return f"""
+【指示】
+{AI_prompt}
+【性格】
+{chara_personality}
+【ナレッジ】
+[知識]
+【質問】
+{user_text}
+""".strip()
+
+
 def UserReq(UserReqtext, knowledge_mode):
     """ユーザのリクエストを受け取る関数
     Args:
@@ -120,7 +167,12 @@ def UserReq(UserReqtext, knowledge_mode):
         tuple[str, list[str], str]: 画面表示文、採用knowledge、採用モード
     """
     normalized_mode = NormalizeKnowledgeMode(knowledge_mode)
-    print(f"ユーザから受け取ったリクエスト={UserReqtext}, knowledge_mode={normalized_mode}")
+    current_question = ExtractCurrentQuestionForLog(UserReqtext)
+    history_count = CountHistoryEntriesForLog(UserReqtext)
+    print("Chat request:")
+    print(f"  Question: {CompactLogText(current_question)}")
+    print(f"  History:  {history_count} exchanges")
+    print(f"  Mode:     {normalized_mode}")
     QAtext, used_files = Serch_sim(UserReqtext, normalized_mode)
     result_text=makesen(QAtext,UserReqtext)
     return result_text, used_files, normalized_mode
@@ -214,7 +266,7 @@ def API1(getText):
         selected_file_names,
         max_chars=KNOWLEDGE_MAX_CHARS,
     )
-    print(f"採用knowledge(search)={used_files}")
+    print(f"Knowledge selected: mode=search, {FormatUsedFilesForLog(used_files)}")
     return knowledge_text, used_files
 
 
@@ -225,7 +277,7 @@ def API1All():
     """
     all_files = ListKnowledgeFiles()
     knowledge_text, used_files = BuildKnowledgeTexts(all_files)
-    print(f"採用knowledge(all)={used_files}")
+    print(f"Knowledge selected: mode=all, {FormatUsedFilesForLog(used_files)}")
     return knowledge_text, used_files
 
 
@@ -402,7 +454,14 @@ def makesen(QA,User):
 【質問】
 {User}
 """
-    print(f"この情報で文生成をお願いしています。質問={User}")
+    current_question = ExtractCurrentQuestionForLog(User)
+    print("Generation request:")
+    print(f"  Question:     {CompactLogText(current_question)}")
+    print(f"  Prompt chars: {len(text)}")
+    print("Gemini prompt (knowledge redacted):")
+    print("----- prompt begin -----")
+    print(BuildGeminiPromptForLog(User))
+    print("----- prompt end -----")
     madetext=API2(text)
     return madetext
 
@@ -458,21 +517,9 @@ def APIKeyIsValid(api_key):
 @app.on_event("startup")
 def startup_log():
     """バックエンド起動時の設定表示"""
-    print(
-        "起動設定: "
-        f"knowledge_mode_default={KNOWLEDGE_MODE_DEFAULT} "
-        "(env: KNOWLEDGE_MODE_DEFAULT=search|all)"
-    )
-    print(
-        "起動設定: "
-        f"home_return_seconds={HOME_RETURN_SECONDS} "
-        "(env: HOME_RETURN_SECONDS=30 など)"
-    )
-    print(
-        "切替方法: "
-        "API body の knowledge_mode=search|all "
-        "（UIにはモード選択を表示しない）"
-    )
+    print("Chu-AI runtime settings:")
+    print(f"  Knowledge mode: {KNOWLEDGE_MODE_DEFAULT}")
+    print(f"  Home return:    {HOME_RETURN_SECONDS}s")
 
 
 @app.get("/api/health")
@@ -499,7 +546,10 @@ def chat(request: ChatRequest):
         )
 
     result, used_files, normalized_mode = UserReq(request_text, knowledge_mode)
-    print(f"回答生成に使用したファイル={used_files}, knowledge_mode={normalized_mode}")
+    print("Chat response:")
+    print(f"  Mode:           {normalized_mode}")
+    print(f"  Used knowledge: {FormatUsedFilesForLog(used_files)}")
+    print(f"  Answer preview: {CompactLogText(result)}")
     return ChatResponse(
         answer=result,
         used_files=used_files,

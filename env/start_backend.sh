@@ -58,14 +58,27 @@ for IFACE in en0 en1; do
   fi
 done
 
-echo "Local URL: http://127.0.0.1:${PORT}"
+printf "\n"
+echo "========================================"
+echo "Chu-AI backend is ready"
+echo "========================================"
+echo "Access URLs:"
+echo "  Local: http://127.0.0.1:${PORT}"
 if [ -n "$LAN_IP" ]; then
-  echo "LAN URL:   http://${LAN_IP}:${PORT}"
+  echo "  LAN:   http://${LAN_IP}:${PORT}"
+else
+  echo "  LAN:   not found"
 fi
-echo "Knowledge mode (default): ${KNOWLEDGE_MODE_EFFECTIVE}"
-echo "  - 変更(既定): env/.env の KNOWLEDGE_MODE_DEFAULT=search|all を変更して再起動"
-echo "  - 変更(都度): API bodyの knowledge_mode=search|all"
-echo "Home return seconds: ${HOME_RETURN_SECONDS_EFFECTIVE}s"
-echo "  - 変更(既定): env/.env の HOME_RETURN_SECONDS=30 などを変更して再起動"
+echo
+echo "Runtime settings:"
+echo "  Knowledge mode: ${KNOWLEDGE_MODE_EFFECTIVE}"
+echo "  Home return:    ${HOME_RETURN_SECONDS_EFFECTIVE}s"
+echo
+echo "How to change settings:"
+echo "  Default knowledge mode: env/.env の KNOWLEDGE_MODE_DEFAULT=search|all を変更して再起動"
+echo "  Per request mode:       API body の knowledge_mode=search|all"
+echo "  Home return seconds:    env/.env の HOME_RETURN_SECONDS を変更して再起動"
+echo "========================================"
+echo
 
 exec uvicorn main:app --host 0.0.0.0 --port "$PORT"
