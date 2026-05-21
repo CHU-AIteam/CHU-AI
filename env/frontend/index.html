@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chu-AI</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main class="screen" id="screen-password">
+      <section class="screen-card">
+        <p class="screen-label">中部大学 不言実行館</p>
+        <h1 class="screen-title">Chu-AI</h1>
+        <p class="screen-text">パスワードを入力してください。</p>
+        <form id="password-form" class="password-form">
+          <input
+            id="password-input"
+            type="password"
+            placeholder="パスワード"
+            autocomplete="off"
+            aria-label="パスワード"
+          >
+          <button type="submit" id="password-submit">確認して進む</button>
+        </form>
+        <p id="password-error" class="password-error" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <main class="screen hidden" id="screen-title">
+      <section class="screen-card title-card">
+        <div class="title-orb title-orb-a" aria-hidden="true"></div>
+        <div class="title-orb title-orb-b" aria-hidden="true"></div>
+        <p class="screen-label">中部大学 案内ボット</p>
+        <h1 class="screen-title">
+          <ruby>Chu-AI<rt>ちゅーあい</rt></ruby>
+        </h1>
+        <p class="screen-text">中部大学、コモンズについてAIに聞いてみよう！</p>
+        <button type="button" id="enter-chat" class="start-chat-button">チャットを始める</button>
+      </section>
+    </main>
+
+    <main class="app hidden" id="chat-app">
+      <div class="chat-layout">
+        <section class="chat-column">
+          <section class="chat-area" aria-label="会話">
+            <header class="header">
+              <div>
+                <p class="label">中部大学 案内ボット</p>
+                <h1 class="chat-title">Chu-AI</h1>
+              </div>
+              <div class="header-actions">
+                <div class="status" id="status"></div>
+                <button type="button" id="back-to-home" class="home-back-button">ホームへ戻る</button>
+              </div>
+            </header>
+
+            <div class="messages" id="messages" aria-live="polite">
+              <article class="message bot">
+                <div class="message-name">Chu-AI</div>
+                <div class="message-text">やっほー！質問を入力してね。</div>
+              </article>
+            </div>
+          </section>
+
+          <section class="input-area" aria-label="質問入力">
+            <div class="quick-buttons" aria-label="よくある質問">
+              <button type="button" class="quick-button">中部大学とは？</button>
+              <button type="button" class="quick-button">コモンズとは？</button>
+              <button type="button" class="quick-button">食堂について教えて</button>
+            </div>
+
+            <form class="form" id="form">
+              <textarea
+                id="question"
+                name="question"
+                rows="3"
+                placeholder="質問を入力"
+                autocomplete="off"
+              ></textarea>
+              <button type="submit" id="send">送信</button>
+            </form>
+          </section>
+        </section>
+
+        <aside class="guide-column" aria-label="使用方法">
+          <section class="guide-card">
+            <p class="guide-title">使用方法</p>
+            <ol class="guide-list">
+              <li>左の入力欄に聞きたいことを入れてね。</li>
+              <li>送信ボタンを押すと、返答が返ってくるよ！</li>
+              <li>入力欄上のよくある質問ボタンもタップしてOK。</li>
+              <li>しばらく操作しないとホームに戻るから、続ける時は画面を触ってね。</li>
+            </ol>
+          </section>
+        </aside>
+      </div>
+      <div id="home-return-warning" class="home-return-warning hidden" aria-live="polite"></div>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
