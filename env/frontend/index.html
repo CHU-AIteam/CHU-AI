@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chu-AI</title>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./style.css?v=20260521-12">
   </head>
   <body>
     <main class="screen" id="screen-password">
@@ -55,10 +55,12 @@
             </header>
 
             <div class="messages" id="messages" aria-live="polite">
-              <article class="message bot">
-                <div class="message-name">Chu-AI</div>
-                <div class="message-text">やっほー！質問を入力してね。</div>
-              </article>
+              <div class="message-list" id="message-list">
+                <article class="message bot">
+                  <div class="message-name">Chu-AI</div>
+                  <div class="message-text">やっほー！質問を入力してね。</div>
+                </article>
+              </div>
             </div>
           </section>
 
@@ -97,6 +99,6 @@
       <div id="home-return-warning" class="home-return-warning hidden" aria-live="polite"></div>
     </main>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260521-12"></script>
   </body>
 </html>

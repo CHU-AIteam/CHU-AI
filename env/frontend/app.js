@@ -27,6 +27,7 @@ const form = document.getElementById("form");
 const question = document.getElementById("question");
 const send = document.getElementById("send");
 const messages = document.getElementById("messages");
+const messageList = document.getElementById("message-list") || messages;
 const statusText = document.getElementById("status");
 const quickButtons = document.querySelectorAll(".quick-button");
 const exchangeHistory = [];
@@ -185,7 +186,7 @@ function createMessageElement(name, type) {
   messageText.className = "message-text";
 
   message.append(messageName, messageText);
-  messages.appendChild(message);
+  messageList.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
   return messageText;
 }
@@ -194,6 +195,43 @@ function addMessage(name, text, type) {
   const messageText = createMessageElement(name, type);
   messageText.textContent = text;
   messages.scrollTop = messages.scrollHeight;
+}
+
+function addThinkingMessage() {
+  const message = document.createElement("article");
+  message.className = "message bot thinking-message";
+
+  const messageName = document.createElement("div");
+  messageName.className = "message-name";
+  messageName.textContent = BOT_NAME;
+
+  const messageText = document.createElement("div");
+  messageText.className = "message-text thinking-text";
+
+  const label = document.createElement("span");
+  label.textContent = "思考中";
+
+  const dots = document.createElement("span");
+  dots.className = "thinking-dots";
+  dots.setAttribute("aria-hidden", "true");
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement("span");
+    dot.className = "thinking-dot";
+    dot.textContent = ".";
+    dots.appendChild(dot);
+  }
+
+  messageText.append(label, dots);
+  message.append(messageName, messageText);
+  messageList.appendChild(message);
+  messages.scrollTop = messages.scrollHeight;
+  return message;
+}
+
+function removeThinkingMessage(message) {
+  if (message && message.parentNode) {
+    message.parentNode.removeChild(message);
+  }
 }
 
 function setInputLocked(locked) {
@@ -217,8 +255,8 @@ function resetChatState() {
   if (question) {
     question.value = "";
   }
-  if (messages) {
-    messages.innerHTML = "";
+  if (messageList) {
+    messageList.innerHTML = "";
     addMessage(BOT_NAME, INITIAL_BOT_MESSAGE, "bot");
   }
 }
@@ -302,6 +340,7 @@ async function sendQuestion(text) {
   question.value = "";
   setInputLocked(true);
   setStatus("回答中", "loading");
+  const thinkingMessage = addThinkingMessage();
 
   try {
     const promptText = buildHistoryPrompt(requestText);
@@ -327,6 +366,7 @@ async function sendQuestion(text) {
     if (currentStateVersion !== chatStateVersion) {
       return;
     }
+    removeThinkingMessage(thinkingMessage);
     setStatus("表示中", "loading");
     const didComplete = await typeMessage(BOT_NAME, data.answer, "bot", () => currentStateVersion === chatStateVersion);
     if (!didComplete || currentStateVersion !== chatStateVersion) {
@@ -339,9 +379,11 @@ async function sendQuestion(text) {
     if (currentStateVersion !== chatStateVersion) {
       return;
     }
+    removeThinkingMessage(thinkingMessage);
     addMessage(BOT_NAME, `接続エラーだよ。バックエンドが起動しているか確認してね。\n${error.message}`, "bot");
     setStatus("エラー", "error");
   } finally {
+    removeThinkingMessage(thinkingMessage);
     if (currentStateVersion !== chatStateVersion) {
       return;
     }
