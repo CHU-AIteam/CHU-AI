@@ -1,145 +1,243 @@
-# Chu-AI 本番環境
+# Chu-AI src
 
-`testing` はCUIのテスト環境、`src` はBIG PAD向けの本番環境です。
+`src` はBIG PADや学内端末で動かす本番アプリ本体です。バックエンドはFastAPI、フロントエンドは静的HTML/CSS/JavaScriptです。
 
-## 構成
+バックエンドがフロントエンドも配信するため、通常は `8000` 番ポートだけを開けば動きます。
+
+## 役割
 
 ```text
 src/
-  setup.sh
-  start_backend.sh
-  start_frontend.sh
-  .env.example
-  .env
+  .env.example          公開してよい設定テンプレート
+  .env                  ローカル設定。APIキーを含むためコミットしない
+  setup.sh              ローカルPython環境の初期セットアップ
+  start_backend.sh      FastAPIバックエンドを起動
+  start_frontend.sh     旧構成用。フロントだけを3000番で起動
   backend/
-    main.py
-    requirements.txt
-    knowledge/
+    main.py             API、Gemini呼び出し、ナレッジ選択、静的配信
+    requirements.txt    Python依存関係
+    knowledge/          回答に使うMarkdownナレッジ
   frontend/
-    index.html
-    style.css
-    app.js
+    index.html          画面構造
+    style.css           画面デザイン
+    app.js              画面制御、API通信、履歴生成
 ```
 
-## 初回だけ行うこと
+## 全体構成
 
-```bash
-cd CHU-AI
-./src/setup.sh
-```
-
-その後、`src/.env` を開いて `API_KEY` を実際のGemini APIキーに置き換えます。
+通常構成:
 
 ```text
-API_KEY=AIzaから始まる実際のGemini APIキー
-GEMINI_MODEL=gemini-2.5-flash
-KNOWLEDGE_MODE_DEFAULT=all
+Browser
+  -> http://<server>:8000/
+  -> FastAPI backend
+      -> /api/chat
+      -> Gemini API
+      -> backend/knowledge/*.md
 ```
 
-`KNOWLEDGE_MODE_DEFAULT` は未指定時のナレッジ投入モードです。`all`（全知識をそのまま使う）または `search`（検索して一部を使う）を指定できます。
+ポイント:
 
-## 画面遷移とパスワード
+- フロントエンドは同一オリジンの `/api/chat` にPOSTする
+- `main.py` が `frontend/` を静的ファイルとして配信する
+- `start_frontend.sh` は旧構成やフロント単体確認用で、通常運用では使わない
 
-1. パスワード画面（リロード時に毎回表示）
-2. タイトル画面
-3. チャット画面
+## 環境変数
 
-パスワードは `commons` です。  
-ホーム復帰時間は表示画面では変更せず、`src/.env` の `HOME_RETURN_SECONDS` で設定します（初期値: `30秒`）。  
-チャット画面へ入ってから設定時間が経過すると、自動でタイトル画面へ戻ります。
-現在のホーム復帰時間はバックエンド起動時ログに表示され、表示画面には表示しません。
-ホームに戻る10秒前から、右下に `ホームに戻ります...(x)` の表示が出ます（`x` は残り秒数）。
-チャット画面で操作（クリック、入力、スクロールなど）があるたびに、このタイマーはリセットされます。
-チャット画面は「左60%: チャット」「右40%: 使用方法」で表示します。
-
-## ナレッジモードの切り替え
-
-フロントエンド画面にはナレッジモード選択を表示していません。  
-会話画面からの送信は `all` 固定です。
-
-1. APIで切り替える（リクエストごと）
-- `/api/chat` のJSONに `knowledge_mode` を含めます。
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"text":"予約は必要？","knowledge_mode":"all"}'
-```
-
-2. 既定値を切り替える（バックエンド全体）
-- `src/.env` の `KNOWLEDGE_MODE_DEFAULT` を変更して、バックエンドを再起動します。
-
-```text
-KNOWLEDGE_MODE_DEFAULT=search
-# または
-KNOWLEDGE_MODE_DEFAULT=all
-```
-
-バックエンド起動時に、現在の既定モードと切り替え方法がログに表示されます。
-
-## 毎回の起動
-
-### Dockerで起動する場合
-
-Windowsを含む別PCで動かす場合はDocker起動が簡単です。リポジトリ直下で実行します。
+`src/.env` で設定します。初回は `src/.env.example` からコピーします。
 
 ```bash
 cp src/.env.example src/.env
 ```
 
-Windows PowerShellでは次でも同じです。
+Windows PowerShell:
 
 ```powershell
 Copy-Item src\.env.example src\.env
 ```
 
-`src/.env` の `API_KEY` を実際のGemini APIキーに変更してから起動します。
+設定項目:
+
+| 項目 | 必須 | 役割 | 既定値 |
+| --- | --- | --- | --- |
+| `API_KEY` | 必須 | Gemini APIキー | なし |
+| `GEMINI_MODEL` | 任意 | Geminiモデル名 | `gemini-2.5-flash` |
+| `KNOWLEDGE_MODE_DEFAULT` | 任意 | APIで未指定時のナレッジ投入方法 | `search` |
+| `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
+| `BACKEND_PORT` | 任意 | `start_backend.sh` の起動ポート | `8000` |
+| `KNOWLEDGE_TOP_K` | 任意 | `search` 時に採用するナレッジファイル数 | `4` |
+| `KNOWLEDGE_MAX_CHARS` | 任意 | 採用ナレッジ本文の最大文字数 | `26000` |
+| `FRONTEND_PORT` | 任意 | `start_frontend.sh` の起動ポート | `3000` |
+
+注意:
+
+- `src/.env` はAPIキーを含むためコミットしない
+- 公開リポジトリに置くのは `src/.env.example` だけ
+- 設定変更後はバックエンドまたはDockerコンテナを再起動する
+
+## Dockerで起動
+
+リポジトリ直下で実行します。
 
 ```bash
 docker compose up --build
 ```
 
-2回目以降は通常これで起動できます。
-
-```bash
-docker compose up
-```
-
-ブラウザで開きます。
+開くURL:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-同じネットワーク内の別端末から開く場合は、Dockerを起動しているPCのIPアドレスを使います。
-
-```text
-http://192.168.1.20:8000
-```
-
-Windowsで別端末から開けない場合は、Windows Defender FirewallでTCP `8000` の受信を許可してください。
-
-`src/.env` はAPIキーを含むため、公開リポジトリにコミットしないでください。公開するのは `src/.env.example` だけです。
-
-### スクリプトで起動する場合
-
-基本はターミナル1つで起動できます（バックエンドがフロントも配信します）。
+停止:
 
 ```bash
-cd CHU-AI
+docker compose down
+```
+
+Dockerでは `docker-compose.yml` が `src/.env` を読み込みます。`src/.env` がない、または `API_KEY` が未設定の場合はGemini呼び出しで失敗します。
+
+## ローカルスクリプトで起動
+
+Python 3.11が必要です。
+
+初回:
+
+```bash
+./src/setup.sh
+```
+
+起動:
+
+```bash
 ./src/start_backend.sh
 ```
 
-BIG PADのブラウザで開きます。
+`start_backend.sh` は以下を行います。
+
+- `src/.env` を読み込む
+- `src/backend/.venv` がなければ作成する
+- `requirements.txt` の依存関係をインストールする
+- `uvicorn main:app --host 0.0.0.0 --port 8000` で起動する
+- Local URLとLAN URLを表示する
+
+## 画面仕様
+
+画面遷移:
+
+1. パスワード画面
+2. タイトル画面
+3. チャット画面
+
+現在のパスワード:
 
 ```text
-http://127.0.0.1:8000
+commons
 ```
 
-## 別PCやBIG PAD内のブラウザから開く場合
+チャット画面:
 
-バックエンドは `0.0.0.0` で起動します。同じネットワーク内の別端末から見る場合は、起動しているPCのIPアドレスを使います。  
-`https://` ではなく、必ず `http://` で開いてください（この構成はHTTP配信です）。
+- 左側にチャット欄
+- 右側に使用方法
+- よくある質問ボタンから定型質問を送信可能
+- 回答中は思考中表示を出す
+- 一定時間操作がないとタイトル画面へ戻る
+
+ホーム復帰:
+
+- 秒数は `HOME_RETURN_SECONDS` で設定する
+- 初期値は `30`
+- チャット画面でクリック、入力、スクロールなどがあるとタイマーをリセットする
+- ホームに戻る10秒前から右下にカウントダウンを表示する
+
+## API
+
+### 起動確認
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+レスポンス例:
+
+```json
+{
+  "status": "ok",
+  "model": "gemini-2.5-flash",
+  "knowledge_mode_default": "all",
+  "home_return_seconds": 30
+}
+```
+
+### チャット
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"text":"中部大学とは？","knowledge_mode":"all"}'
+```
+
+リクエスト:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `text` | string | ユーザーの質問。フロントエンドでは過去会話も含めて送る |
+| `knowledge_mode` | string/null | `all` または `search`。省略時は `KNOWLEDGE_MODE_DEFAULT` |
+
+レスポンス:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `answer` | string | Geminiが生成した回答 |
+| `used_files` | string[] | 回答生成に使ったナレッジファイル |
+| `knowledge_mode` | string | 実際に使ったナレッジモード |
+
+## ナレッジモード
+
+`all`:
+
+- `backend/knowledge/` のMarkdownを広く投入する
+- 回答に必要な情報を落としにくい
+- 入力量が増える
+
+`search`:
+
+- `99_knowledge_h2_summary_index.md` を使って関連ファイルを選ぶ
+- 入力量を抑えられる
+- 検索に失敗すると必要情報が落ちる可能性がある
+
+現在のフロントエンドは通常送信時に `knowledge_mode: "all"` を指定します。そのため、UIからの送信では `KNOWLEDGE_MODE_DEFAULT` よりフロントエンド指定が優先されます。
+
+`KNOWLEDGE_MODE_DEFAULT` が効くのは、APIリクエストで `knowledge_mode` を省略した場合です。
+
+## ログ
+
+起動時ログには以下を表示します。
+
+- 現在のナレッジモード
+- ホーム復帰秒数
+- Local URL
+- LAN URL
+
+チャットごとのログには以下を表示します。
+
+- 採用したナレッジモード
+- 使用したナレッジファイル
+- 回答プレビュー
+- Geminiへ投げる内容のうち、ナレッジ本文は `[知識]` として省略した確認用ログ
+
+注意:
+
+- `docker compose config` の出力は `src/.env` の値を含む
+- APIキー入りのログや設定出力を共有しない
+
+## 別端末から開く
+
+同じネットワーク内の別端末から開く場合は、起動PCのLAN IPを使います。
+
+```text
+http://<起動PCのLAN IP>:8000
+```
 
 例:
 
@@ -147,42 +245,50 @@ http://127.0.0.1:8000
 http://192.168.1.20:8000
 ```
 
-フロントエンドは同一オリジンの `/api/chat` に接続します。
+確認すること:
 
-## 起動確認
-
-バックエンド:
-
-```bash
-curl http://127.0.0.1:8000/api/health
-```
-
-UI:
-
-```text
-http://127.0.0.1:8000
-```
-
-## 旧構成（任意）
-
-フロントだけを別ポートで配信したい場合は以下も使えます。
-
-```bash
-cd CHU-AI
-./src/start_frontend.sh
-```
+- 起動PCと閲覧端末が同じネットワークにいる
+- `https://` ではなく `http://` を使っている
+- ポートは `8000`
+- Windowsの場合、TCP `8000` の受信がファイアウォールで許可されている
+- スマホのモバイル回線ではなく同じWi-Fiに接続している
 
 ## よくあるエラー
 
-`API_KEYに実際のGemini APIキーを設定してください。` と表示される場合:
+`API_KEYに実際のGemini APIキーを設定してください。`
 
-`src/.env` の `API_KEY` が説明文のままです。Google AI Studioで発行した実際のキーに置き換えてください。
+`src/.env` の `API_KEY` がテンプレートのままです。Google AI Studioで発行した実際のキーに置き換えてください。
 
-`python3.11 が見つかりません。` と表示される場合:
+`429 RESOURCE_EXHAUSTED`
 
-Python 3.11をインストールしてください。本番環境ではPython 3.11を前提にしています。
+Gemini API側の利用上限、課金上限、または月額上限に達しています。コードではなくAPIプロジェクト側の制限です。
 
-`Error: connect ENETUNREACH x.x.x.x:3000` と表示される場合:
+`python3.11 が見つかりません。`
 
-BIG PADから起動PCへの経路がありません。起動PCで `./src/start_backend.sh` を再起動し、表示される `LAN URL` のアドレスへ `http://` で接続してください。  
-`https://` や古いIPアドレス、`:3000` へのアクセスでは接続できないことがあります。
+ローカルスクリプト起動に必要なPython 3.11が入っていません。Docker起動に切り替えるか、Python 3.11をインストールしてください。
+
+スマホや別PCから開けない
+
+`127.0.0.1` ではなく起動PCのLAN IPを使ってください。WindowsではファイアウォールでTCP `8000` を許可してください。
+
+`Error: connect ENETUNREACH x.x.x.x:3000`
+
+古いフロント単体構成、古いIP、または `3000` 番に接続しています。通常構成では `http://<起動PCのIP>:8000` を使ってください。
+
+## 変更時の確認
+
+READMEや設定を変更した後は、最低限以下を確認します。
+
+```bash
+sh -n src/setup.sh
+sh -n src/start_backend.sh
+sh -n src/start_frontend.sh
+python3.11 -m py_compile src/backend/main.py
+docker compose config --quiet
+```
+
+Docker起動まで確認する場合:
+
+```bash
+docker compose up --build
+```
