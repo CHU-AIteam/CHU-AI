@@ -477,7 +477,7 @@ def API2(getText):
         from google import genai
         from google.genai import types
     except ImportError:
-        return "Gemini SDKが入っていません。`python3.11 -m pip install -r env/backend/requirements.txt` を実行してください。"
+        return "Gemini SDKが入っていません。`python3.11 -m pip install -r src/backend/requirements.txt` を実行してください。"
 
     api_key = os.getenv("API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:

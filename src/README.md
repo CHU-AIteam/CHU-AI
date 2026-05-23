@@ -1,11 +1,11 @@
 # Chu-AI 本番環境
 
-`testing` はCUIのテスト環境、`env` はBIG PAD向けの本番環境です。
+`testing` はCUIのテスト環境、`src` はBIG PAD向けの本番環境です。
 
 ## 構成
 
 ```text
-env/
+src/
   setup.sh
   start_backend.sh
   start_frontend.sh
@@ -24,11 +24,11 @@ env/
 ## 初回だけ行うこと
 
 ```bash
-cd /Users/kosukeasakura/A_LIFE/TyubuAI
-./env/setup.sh
+cd CHU-AI
+./src/setup.sh
 ```
 
-その後、`env/.env` を開いて `API_KEY` を実際のGemini APIキーに置き換えます。
+その後、`src/.env` を開いて `API_KEY` を実際のGemini APIキーに置き換えます。
 
 ```text
 API_KEY=AIzaから始まる実際のGemini APIキー
@@ -45,7 +45,7 @@ KNOWLEDGE_MODE_DEFAULT=all
 3. チャット画面
 
 パスワードは `commons` です。  
-ホーム復帰時間は表示画面では変更せず、`env/.env` の `HOME_RETURN_SECONDS` で設定します（初期値: `30秒`）。  
+ホーム復帰時間は表示画面では変更せず、`src/.env` の `HOME_RETURN_SECONDS` で設定します（初期値: `30秒`）。  
 チャット画面へ入ってから設定時間が経過すると、自動でタイトル画面へ戻ります。
 現在のホーム復帰時間はバックエンド起動時ログに表示され、表示画面には表示しません。
 ホームに戻る10秒前から、右下に `ホームに戻ります...(x)` の表示が出ます（`x` は残り秒数）。
@@ -67,7 +67,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 ```
 
 2. 既定値を切り替える（バックエンド全体）
-- `env/.env` の `KNOWLEDGE_MODE_DEFAULT` を変更して、バックエンドを再起動します。
+- `src/.env` の `KNOWLEDGE_MODE_DEFAULT` を変更して、バックエンドを再起動します。
 
 ```text
 KNOWLEDGE_MODE_DEFAULT=search
@@ -79,11 +79,55 @@ KNOWLEDGE_MODE_DEFAULT=all
 
 ## 毎回の起動
 
+### Dockerで起動する場合
+
+Windowsを含む別PCで動かす場合はDocker起動が簡単です。リポジトリ直下で実行します。
+
+```bash
+cp src/.env.example src/.env
+```
+
+Windows PowerShellでは次でも同じです。
+
+```powershell
+Copy-Item src\.env.example src\.env
+```
+
+`src/.env` の `API_KEY` を実際のGemini APIキーに変更してから起動します。
+
+```bash
+docker compose up --build
+```
+
+2回目以降は通常これで起動できます。
+
+```bash
+docker compose up
+```
+
+ブラウザで開きます。
+
+```text
+http://127.0.0.1:8000
+```
+
+同じネットワーク内の別端末から開く場合は、Dockerを起動しているPCのIPアドレスを使います。
+
+```text
+http://192.168.1.20:8000
+```
+
+Windowsで別端末から開けない場合は、Windows Defender FirewallでTCP `8000` の受信を許可してください。
+
+`src/.env` はAPIキーを含むため、公開リポジトリにコミットしないでください。公開するのは `src/.env.example` だけです。
+
+### スクリプトで起動する場合
+
 基本はターミナル1つで起動できます（バックエンドがフロントも配信します）。
 
 ```bash
-cd /Users/kosukeasakura/A_LIFE/TyubuAI
-./env/start_backend.sh
+cd CHU-AI
+./src/start_backend.sh
 ```
 
 BIG PADのブラウザで開きます。
@@ -124,15 +168,15 @@ http://127.0.0.1:8000
 フロントだけを別ポートで配信したい場合は以下も使えます。
 
 ```bash
-cd /Users/kosukeasakura/A_LIFE/TyubuAI
-./env/start_frontend.sh
+cd CHU-AI
+./src/start_frontend.sh
 ```
 
 ## よくあるエラー
 
 `API_KEYに実際のGemini APIキーを設定してください。` と表示される場合:
 
-`env/.env` の `API_KEY` が説明文のままです。Google AI Studioで発行した実際のキーに置き換えてください。
+`src/.env` の `API_KEY` が説明文のままです。Google AI Studioで発行した実際のキーに置き換えてください。
 
 `python3.11 が見つかりません。` と表示される場合:
 
@@ -140,5 +184,5 @@ Python 3.11をインストールしてください。本番環境ではPython 3.
 
 `Error: connect ENETUNREACH x.x.x.x:3000` と表示される場合:
 
-BIG PADから起動PCへの経路がありません。起動PCで `./env/start_backend.sh` を再起動し、表示される `LAN URL` のアドレスへ `http://` で接続してください。  
+BIG PADから起動PCへの経路がありません。起動PCで `./src/start_backend.sh` を再起動し、表示される `LAN URL` のアドレスへ `http://` で接続してください。  
 `https://` や古いIPアドレス、`:3000` へのアクセスでは接続できないことがあります。

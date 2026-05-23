@@ -6,7 +6,7 @@ __pycache__/
 *$py.class
 
 # Python virtual environments
-env/backend/.venv/
+src/backend/.venv/
 .venv/
 venv/
 
