@@ -66,7 +66,8 @@ JSONのキーは次の3つだけです。
   ]
 }
 can_answer は、ナレッジと過去会話に基づいて答えられる場合だけ true にしてください。
-recommended_questions は必ず日本語で3つ作ってください。
+recommended_questions は必ず3件作ってください。
+recommended_questions の各質問は日本語で14文字以内にしてください。
 """.strip()
 """Geminiから機械処理しやすいJSONを受け取るための指示"""
 
