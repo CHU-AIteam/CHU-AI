@@ -1,15 +1,18 @@
 from pathlib import Path
 
+import json
 import os
 import math
 import re
+import sqlite3
 import sys
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -50,6 +53,23 @@ chara_personality="""# Role
 AI_prompt="You are a university AI chatbot. Based on the following situation, create a sentence in Japanese.あなたは大学の案内ボットです。以下の【ナレッジ】に基づいて、日本語で回答してください。【ナレッジ】にない内容は、推測で断定せず「今ある情報ではわからない」と伝えてください。"
 """文生成の具体的な指示文"""
 
+RESPONSE_JSON_INSTRUCTION = """
+必ずJSONオブジェクトだけで返してください。Markdownのコードブロックや説明文は付けないでください。
+JSONのキーは次の3つだけです。
+{
+  "answer": "ユーザーに表示する回答文",
+  "can_answer": true,
+  "recommended_questions": [
+    "次におすすめする質問1",
+    "次におすすめする質問2",
+    "次におすすめする質問3"
+  ]
+}
+can_answer は、ナレッジと過去会話に基づいて答えられる場合だけ true にしてください。
+recommended_questions は必ず日本語で3つ作ってください。
+""".strip()
+"""Geminiから機械処理しやすいJSONを受け取るための指示"""
+
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 """文章生成に使うGeminiモデル"""
 
@@ -58,6 +78,9 @@ KNOWLEDGE_DIR = Path(__file__).resolve().parent / "knowledge"
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 """チャットUIの静的ファイルディレクトリ"""
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+"""CHU-AIリポジトリのルートディレクトリ"""
 
 
 def GetPositiveIntEnv(name, default):
@@ -128,6 +151,17 @@ CHAT_HISTORY_WINDOW_MINUTES = GetNonNegativeFloatEnv(
 )
 """フロントエンドへ渡す過去会話の保持分数。0なら履歴を使わない。"""
 
+CHAT_LOG_ENABLED = os.getenv("CHAT_LOG_ENABLED", "true").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+"""チャットログをSQLiteへ保存するかどうか"""
+
+CHAT_LOG_DB_PATH = os.getenv("CHAT_LOG_DB_PATH", "data/chu_ai.sqlite3").strip()
+"""チャットログSQLiteファイルのパス。相対パスはリポジトリルート基準。"""
+
 app = FastAPI(title="Chu-AI Backend")
 """フロントエンドから呼び出されるAPI"""
 
@@ -149,8 +183,20 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """フロントエンドへ返す回答"""
     answer: str
-    used_files: list[str] = []
+    can_answer: bool = True
+    recommended_questions: list[str] = Field(default_factory=list)
+    used_files: list[str] = Field(default_factory=list)
     knowledge_mode: str = KNOWLEDGE_MODE_DEFAULT
+
+
+DEFAULT_RECOMMENDED_QUESTIONS = [
+    "中部大学にはどんな学部がありますか？",
+    "コモンズでは何ができますか？",
+    "食堂について教えて",
+    "中部大学の就職支援について教えて",
+    "キャンパス施設について教えて",
+]
+"""Gemini出力が不正な時に使う既定のおすすめ質問"""
 
 
 def CompactLogText(text, max_chars=120):
@@ -174,6 +220,36 @@ def CountHistoryEntriesForLog(text):
     return len(re.findall(r"(?m)^\d+\.$", text))
 
 
+def ExtractConversationHistory(text):
+    """履歴付きリクエストから過去会話の内容を取り出す関数"""
+    history_marker = "【過去の会話履歴】"
+    current_marker = "【現在の質問】"
+    if history_marker not in text:
+        return []
+
+    history_section = text.split(history_marker, 1)[1]
+    if current_marker in history_section:
+        history_section = history_section.split(current_marker, 1)[0]
+
+    conversations = []
+    for chunk in re.split(r"(?m)^\d+\.\s*$", history_section):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+
+        match = re.search(r"ユーザー:\s*(.*?)\nChu-AI:\s*([\s\S]*)", chunk)
+        if not match:
+            continue
+
+        conversations.append(
+            {
+                "user": match.group(1).strip(),
+                "bot": match.group(2).strip(),
+            }
+        )
+    return conversations
+
+
 def FormatUsedFilesForLog(used_files, preview_count=5):
     """採用knowledge一覧をログ用に短く整える関数"""
     if not used_files:
@@ -191,6 +267,8 @@ def BuildGeminiPromptForLog(user_text):
     return f"""
 【指示】
 {AI_prompt}
+【出力形式】
+{RESPONSE_JSON_INSTRUCTION}
 【性格】
 {chara_personality}
 【ナレッジ】
@@ -200,13 +278,235 @@ def BuildGeminiPromptForLog(user_text):
 """.strip()
 
 
+def CurrentAskedAt():
+    """DB保存用の日本時間タイムスタンプを返す関数"""
+    jst = timezone(timedelta(hours=9))
+    return datetime.now(jst).isoformat(timespec="seconds")
+
+
+def ResolveChatLogDbPath():
+    """チャットログDBパスを絶対パスへ変換する関数"""
+    db_path = Path(CHAT_LOG_DB_PATH).expanduser()
+    if db_path.is_absolute():
+        return db_path
+    return PROJECT_ROOT / db_path
+
+
+def InitializeChatLogDb():
+    """SQLiteのチャットログテーブルを作成する関数"""
+    if not CHAT_LOG_ENABLED:
+        return
+
+    db_path = ResolveChatLogDbPath()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asked_at TEXT NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                can_answer INTEGER NOT NULL,
+                used_knowledge_files_json TEXT NOT NULL,
+                used_conversation_json TEXT NOT NULL,
+                recommended_questions_json TEXT NOT NULL,
+                knowledge_mode TEXT NOT NULL,
+                request_text TEXT NOT NULL,
+                error_type TEXT,
+                error_message TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_chat_logs_asked_at
+            ON chat_logs (asked_at)
+            """
+        )
+
+
+def SaveChatLog(
+    *,
+    asked_at,
+    question,
+    answer,
+    can_answer,
+    used_knowledge_files,
+    used_conversation,
+    recommended_questions,
+    knowledge_mode,
+    request_text,
+    error_type=None,
+    error_message=None,
+):
+    """チャット1件分をSQLiteへ保存する関数"""
+    if not CHAT_LOG_ENABLED:
+        return
+
+    try:
+        InitializeChatLogDb()
+        with sqlite3.connect(ResolveChatLogDbPath()) as connection:
+            connection.execute(
+                """
+                INSERT INTO chat_logs (
+                    asked_at,
+                    question,
+                    answer,
+                    can_answer,
+                    used_knowledge_files_json,
+                    used_conversation_json,
+                    recommended_questions_json,
+                    knowledge_mode,
+                    request_text,
+                    error_type,
+                    error_message
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    asked_at,
+                    question,
+                    answer,
+                    1 if can_answer else 0,
+                    json.dumps(used_knowledge_files, ensure_ascii=False),
+                    json.dumps(used_conversation, ensure_ascii=False),
+                    json.dumps(recommended_questions, ensure_ascii=False),
+                    knowledge_mode,
+                    request_text,
+                    error_type,
+                    error_message,
+                ),
+            )
+    except Exception as error:
+        print(f"Chat log save failed: {error}", file=sys.stderr)
+
+
+def NormalizeBool(value, fallback=False):
+    """Gemini JSON内の真偽値をboolへ正規化する関数"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y"}:
+            return True
+        if normalized in {"false", "0", "no", "n"}:
+            return False
+    return fallback
+
+
+def NormalizeRecommendedQuestions(value, current_question):
+    """おすすめ質問を最大3件の文字列リストへ正規化する関数"""
+    questions = []
+    source = value if isinstance(value, list) else []
+    for item in source:
+        question = str(item).strip()
+        if not question or question == current_question or question in questions:
+            continue
+        questions.append(question)
+        if len(questions) >= 3:
+            return questions
+
+    for question in DEFAULT_RECOMMENDED_QUESTIONS:
+        if question == current_question or question in questions:
+            continue
+        questions.append(question)
+        if len(questions) >= 3:
+            break
+
+    return questions
+
+
+def ExtractJsonObject(text):
+    """Gemini出力からJSONオブジェクト部分だけを取り出す関数"""
+    stripped = text.strip()
+    stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"\s*```$", "", stripped)
+
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start == -1 or end == -1 or start > end:
+        raise ValueError("JSON object was not found")
+
+    return json.loads(stripped[start : end + 1])
+
+
+def DetectErrorType(text):
+    """生成結果からAPIエラー種別を推定する関数"""
+    if "RESOURCE_EXHAUSTED" in text or "429" in text:
+        return "gemini_resource_exhausted", text
+    if "API_KEY" in text:
+        return "api_key_error", text
+    if "Gemini SDK" in text:
+        return "dependency_error", text
+    if text.startswith("エラーが発生しただよ"):
+        return "gemini_error", text
+    return None, None
+
+
+def GuessCanAnswer(answer):
+    """JSONが崩れた場合に回答可否を文章から推定する関数"""
+    unknown_markers = [
+        "わからない",
+        "分からない",
+        "今ある情報では",
+        "ちょっとわからない",
+        "エラーが発生",
+        "RESOURCE_EXHAUSTED",
+        "API_KEY",
+        "Gemini SDK",
+    ]
+    return bool(answer.strip()) and not any(marker in answer for marker in unknown_markers)
+
+
+def BuildGenerationResult(raw_text, current_question):
+    """GeminiのJSON出力を画面表示用データへ変換する関数"""
+    fallback_answer = raw_text.strip() or "回答を生成できなかっただよ。時間をおいてもう一度試してね。"
+    error_type, error_message = DetectErrorType(fallback_answer)
+    fallback_can_answer = error_type is None and GuessCanAnswer(fallback_answer)
+
+    try:
+        data = ExtractJsonObject(fallback_answer)
+    except Exception:
+        return {
+            "answer": fallback_answer,
+            "can_answer": fallback_can_answer,
+            "recommended_questions": []
+            if error_type is not None
+            else NormalizeRecommendedQuestions([], current_question),
+            "raw_text": raw_text,
+            "error_type": error_type,
+            "error_message": error_message,
+        }
+
+    answer = str(data.get("answer") or fallback_answer).strip()
+    if not answer:
+        answer = fallback_answer
+
+    can_answer = NormalizeBool(data.get("can_answer"), fallback_can_answer)
+    if error_type is not None:
+        can_answer = False
+
+    return {
+        "answer": answer,
+        "can_answer": can_answer,
+        "recommended_questions": NormalizeRecommendedQuestions(
+            data.get("recommended_questions"),
+            current_question,
+        ),
+        "raw_text": raw_text,
+        "error_type": error_type,
+        "error_message": error_message,
+    }
+
+
 def UserReq(UserReqtext, knowledge_mode):
     """ユーザのリクエストを受け取る関数
     Args:
         UserReqtext (str): ユーザからのリクエスト文章
         knowledge_mode (str): ナレッジ投入モード
     Returns:
-        tuple[str, list[str], str]: 画面表示文、採用knowledge、採用モード
+        tuple[dict, list[str], str]: 生成結果、採用knowledge、採用モード
     """
     normalized_mode = NormalizeKnowledgeMode(knowledge_mode)
     current_question = ExtractCurrentQuestionForLog(UserReqtext)
@@ -216,8 +516,9 @@ def UserReq(UserReqtext, knowledge_mode):
     print(f"  History:  {history_count} exchanges")
     print(f"  Mode:     {normalized_mode}")
     QAtext, used_files = Serch_sim(UserReqtext, normalized_mode)
-    result_text=makesen(QAtext,UserReqtext)
-    return result_text, used_files, normalized_mode
+    raw_result_text = makesen(QAtext, UserReqtext)
+    generation = BuildGenerationResult(raw_result_text, current_question)
+    return generation, used_files, normalized_mode
 
 
 def Serch_sim(getText, knowledge_mode):
@@ -489,6 +790,8 @@ def makesen(QA,User):
     text=f"""
 【指示】
 {AI_prompt}
+【出力形式】
+{RESPONSE_JSON_INSTRUCTION}
 【性格】
 {chara_personality}
 【ナレッジ】
@@ -559,6 +862,9 @@ def APIKeyIsValid(api_key):
 @app.on_event("startup")
 def startup_log():
     """バックエンド起動時の設定表示"""
+    if CHAT_LOG_ENABLED:
+        InitializeChatLogDb()
+
     print("Chu-AI runtime settings:")
     print(f"  Knowledge mode: {KNOWLEDGE_MODE_DEFAULT}")
     print(f"  Home return:    {HOME_RETURN_SECONDS}s")
@@ -566,6 +872,10 @@ def startup_log():
         "  Chat history:   "
         f"{CHAT_HISTORY_MAX_EXCHANGES} exchanges / {CHAT_HISTORY_WINDOW_MINUTES:g} min"
     )
+    if CHAT_LOG_ENABLED:
+        print(f"  Chat log:       enabled ({ResolveChatLogDbPath()})")
+    else:
+        print("  Chat log:       disabled")
 
 
 @app.get("/api/health")
@@ -578,6 +888,7 @@ def health():
         "home_return_seconds": HOME_RETURN_SECONDS,
         "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
         "chat_history_window_minutes": CHAT_HISTORY_WINDOW_MINUTES,
+        "chat_log_enabled": CHAT_LOG_ENABLED,
     }
 
 
@@ -589,17 +900,39 @@ def chat(request: ChatRequest):
     if not request_text:
         return ChatResponse(
             answer="質問を入力してね。",
+            can_answer=False,
+            recommended_questions=NormalizeRecommendedQuestions([], ""),
             used_files=[],
             knowledge_mode=knowledge_mode,
         )
 
-    result, used_files, normalized_mode = UserReq(request_text, knowledge_mode)
+    asked_at = CurrentAskedAt()
+    current_question = ExtractCurrentQuestionForLog(request_text)
+    used_conversation = ExtractConversationHistory(request_text)
+    generation, used_files, normalized_mode = UserReq(request_text, knowledge_mode)
+    SaveChatLog(
+        asked_at=asked_at,
+        question=current_question,
+        answer=generation["answer"],
+        can_answer=generation["can_answer"],
+        used_knowledge_files=used_files,
+        used_conversation=used_conversation,
+        recommended_questions=generation["recommended_questions"],
+        knowledge_mode=normalized_mode,
+        request_text=request_text,
+        error_type=generation["error_type"],
+        error_message=generation["error_message"],
+    )
     print("Chat response:")
     print(f"  Mode:           {normalized_mode}")
+    print(f"  Can answer:     {generation['can_answer']}")
     print(f"  Used knowledge: {FormatUsedFilesForLog(used_files)}")
-    print(f"  Answer preview: {CompactLogText(result)}")
+    print(f"  Recommended:    {len(generation['recommended_questions'])} questions")
+    print(f"  Answer preview: {CompactLogText(generation['answer'])}")
     return ChatResponse(
-        answer=result,
+        answer=generation["answer"],
+        can_answer=generation["can_answer"],
+        recommended_questions=generation["recommended_questions"],
         used_files=used_files,
         knowledge_mode=normalized_mode,
     )

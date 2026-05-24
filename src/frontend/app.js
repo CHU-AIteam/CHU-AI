@@ -30,6 +30,7 @@ const messages = document.getElementById("messages");
 const messageList = document.getElementById("message-list") || messages;
 const statusText = document.getElementById("status");
 const quickButtons = document.querySelectorAll(".quick-button");
+const initialQuickQuestions = Array.from(quickButtons).map((button) => button.textContent.trim());
 const exchangeHistory = [];
 
 let isInputLocked = false;
@@ -236,6 +237,67 @@ function removeThinkingMessage(message) {
   }
 }
 
+function setQuickQuestionLabels(labels) {
+  Array.from(quickButtons).forEach((button, index) => {
+    if (labels[index]) {
+      button.textContent = labels[index];
+    }
+  });
+}
+
+function resetQuickQuestions() {
+  setQuickQuestionLabels(initialQuickQuestions);
+}
+
+function renderRecommendedQuestions(questions, canAnswer) {
+  if (!canAnswer || !Array.isArray(questions)) {
+    return;
+  }
+
+  const normalizedQuestions = questions
+    .map((item) => String(item).trim())
+    .filter((item, index, list) => item && list.indexOf(item) === index)
+    .slice(0, 3);
+  if (normalizedQuestions.length < 3) {
+    return;
+  }
+
+  quickButtons.forEach((button, index) => {
+    button.style.setProperty("--quick-index", index);
+    button.classList.remove("quick-button-fetched");
+    button.classList.add("quick-button-fetching");
+  });
+
+  window.setTimeout(() => {
+    setQuickQuestionLabels(normalizedQuestions);
+    quickButtons.forEach((button) => {
+      button.classList.remove("quick-button-fetching");
+      button.classList.add("quick-button-fetched");
+    });
+    window.setTimeout(() => {
+      quickButtons.forEach((button) => {
+        button.classList.remove("quick-button-fetched");
+      });
+    }, 420);
+  }, 130);
+}
+
+function handleQuickQuestionClick(button) {
+  const text = button.textContent.trim();
+  if (!text) {
+    return;
+  }
+  sendQuestion(text);
+}
+
+function bindQuickQuestionButtons() {
+  quickButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      handleQuickQuestionClick(button);
+    });
+  });
+}
+
 function setInputLocked(locked) {
   isInputLocked = locked;
   question.disabled = locked;
@@ -253,6 +315,7 @@ function resetChatState() {
   chatStateVersion += 1;
   exchangeHistory.length = 0;
   setInputLocked(false);
+  resetQuickQuestions();
   setStatus("");
   if (question) {
     question.value = "";
@@ -409,6 +472,7 @@ async function sendQuestion(text) {
       return;
     }
     pushExchange(requestText, data.answer);
+    renderRecommendedQuestions(data.recommended_questions, data.can_answer);
     setStatus("");
     noteUserActivity(true);
   } catch (error) {
@@ -495,11 +559,7 @@ function bindEvents() {
     });
   }
 
-  quickButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      sendQuestion(button.textContent);
-    });
-  });
+  bindQuickQuestionButtons();
 
   if (question) {
     question.addEventListener("keydown", (event) => {

@@ -618,6 +618,16 @@ select {
   touch-action: manipulation;
 }
 
+.quick-button-fetching {
+  animation: quickFetchOut 0.16s ease both;
+  animation-delay: calc(var(--quick-index, 0) * 35ms);
+}
+
+.quick-button-fetched {
+  animation: quickFetchIn 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--quick-index, 0) * 55ms);
+}
+
 .quick-button:active,
 #send:active {
   transform: translateY(1px);
@@ -972,6 +982,34 @@ textarea:focus {
   to {
     transform: translateY(-1px);
     opacity: 1;
+  }
+}
+
+@keyframes quickFetchOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0.35;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes quickFetchIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+    background: #dff3ef;
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    background: linear-gradient(180deg, #ffffff, #eff8f7);
   }
 }
 

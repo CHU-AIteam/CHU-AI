@@ -66,6 +66,8 @@ Copy-Item src\.env.example src\.env
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | 任意 | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | 任意 | Geminiへ渡す過去会話の保持分数 | `2` |
+| `CHAT_LOG_ENABLED` | 任意 | 質問・回答ログをSQLiteへ保存するか | `true` |
+| `CHAT_LOG_DB_PATH` | 任意 | SQLiteログDBの保存先。相対パスはリポジトリルート基準 | `data/chu_ai.sqlite3` |
 | `BACKEND_PORT` | 任意 | `start_backend.sh` の起動ポート | `8000` |
 | `KNOWLEDGE_TOP_K` | 任意 | `search` 時に採用するナレッジファイル数 | `4` |
 | `KNOWLEDGE_MAX_CHARS` | 任意 | 採用ナレッジ本文の最大文字数 | `26000` |
@@ -162,6 +164,44 @@ commons
 - 何分以内の履歴を使うかは `CHAT_HISTORY_WINDOW_MINUTES` で設定する
 - `CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` の場合、履歴を使わない
 
+おすすめ質問:
+
+- GeminiがJSONで `recommended_questions` を3件返す
+- フロントエンドは回答表示後、入力欄上の既存3ボタンをおすすめ質問へアニメーション付きで差し替える
+- ボタンを押すと、その文面をそのまま次の質問として送信する
+- エラー、回答不可、またはおすすめ質問が3件揃わない場合は、既存ボタンの文言を変更しない
+- ホームへ戻って会話状態をリセットした場合は、初期ボタンへ戻す
+
+## 回答ログDB
+
+`CHAT_LOG_ENABLED=true` の場合、`/api/chat` の処理結果をSQLiteへ保存します。DBファイルとテーブルはバックエンド起動時または初回保存時に自動作成します。
+
+既定の保存先:
+
+```text
+data/chu_ai.sqlite3
+```
+
+Docker起動時は `docker-compose.yml` で `./data:/app/data` をマウントします。そのため、コンテナを作り直してもホスト側の `data/chu_ai.sqlite3` にログが残ります。
+
+保存する主な項目:
+
+| 項目 | 内容 |
+| --- | --- |
+| `asked_at` | 聞かれた時間。日本時間のISO形式 |
+| `question` | 今回の質問文 |
+| `answer` | 画面に表示した回答 |
+| `can_answer` | 回答可否。`1` が回答可、`0` が不可 |
+| `used_knowledge_files_json` | 参照した知識ファイル名のJSON |
+| `used_conversation_json` | Geminiへ渡した過去会話のJSON |
+| `recommended_questions_json` | 次におすすめする質問3件のJSON |
+| `knowledge_mode` | `all` または `search` |
+| `request_text` | フロントエンドから届いた履歴込みの全文 |
+| `error_type` | APIエラーなどの種別 |
+| `error_message` | APIエラーなどの詳細 |
+
+`data/` はgit管理外です。公開リポジトリにDB本体を含めないでください。
+
 ## API
 
 ### 起動確認
@@ -179,7 +219,8 @@ curl http://127.0.0.1:8000/api/health
   "knowledge_mode_default": "all",
   "home_return_seconds": 30,
   "chat_history_max_exchanges": 5,
-  "chat_history_window_minutes": 2
+  "chat_history_window_minutes": 2,
+  "chat_log_enabled": true
 }
 ```
 
@@ -203,6 +244,8 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | 項目 | 型 | 役割 |
 | --- | --- | --- |
 | `answer` | string | Geminiが生成した回答 |
+| `can_answer` | boolean | 回答できたかどうか |
+| `recommended_questions` | string[] | 次におすすめする質問。回答可なら入力欄上の既存3ボタンへ反映する |
 | `used_files` | string[] | 回答生成に使ったナレッジファイル |
 | `knowledge_mode` | string | 実際に使ったナレッジモード |
 
@@ -231,6 +274,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 - 現在のナレッジモード
 - ホーム復帰秒数
 - 会話履歴の最大往復数と保持分数
+- 回答ログDBの有効/無効と保存先
 - Local URL
 - LAN URL
 

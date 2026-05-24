@@ -21,6 +21,7 @@ src/backend/.venv/
 *.pid
 *.sqlite3
 *.db
+data/
 
 .env
 .env.*

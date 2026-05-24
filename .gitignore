@@ -19,6 +19,7 @@ venv/
 htmlcov/
 
 # Runtime / local artifacts
+data/
 *.log
 *.pid
 *.sqlite3

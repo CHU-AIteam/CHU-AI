@@ -36,6 +36,8 @@ KNOWLEDGE_MODE_DEFAULT=all
 HOME_RETURN_SECONDS=30
 CHAT_HISTORY_MAX_EXCHANGES=5
 CHAT_HISTORY_WINDOW_MINUTES=2
+CHAT_LOG_ENABLED=true
+CHAT_LOG_DB_PATH=data/chu_ai.sqlite3
 ```
 
 ## 起動
@@ -88,10 +90,14 @@ http://<起動PCのIPアドレス>:8000
 | `HOME_RETURN_SECONDS` | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | Geminiへ渡す過去会話の保持分数 | `2` |
+| `CHAT_LOG_ENABLED` | 質問・回答ログをSQLiteへ保存するか | `true` |
+| `CHAT_LOG_DB_PATH` | SQLiteログDBの保存先 | `data/chu_ai.sqlite3` |
 
 フロントエンドからの通常送信は `knowledge_mode: "all"` を指定します。APIを直接叩く場合のみ、リクエストごとに `search` / `all` を切り替えられます。
 
 会話履歴はブラウザ上で保持し、API送信時に質問へ同梱します。`CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` にすると、過去履歴をGeminiへ渡しません。
+
+回答ログは `data/chu_ai.sqlite3` に保存します。DBファイルとテーブルはバックエンド起動時または初回保存時に自動作成します。保存内容は、質問時刻、質問文、回答、回答可否、参照した知識ファイル、使用した過去会話、おすすめ質問です。
 
 ## 公開リポジトリでの注意
 
@@ -107,6 +113,7 @@ http://<起動PCのIPアドレス>:8000
 - `src/.env`
 - APIキー
 - `src/backend/.venv/`
+- `data/`
 - キャッシュ、ログ、ローカルDB
 
 `.gitignore` と `.dockerignore` で秘密情報やローカル生成物は除外しています。
@@ -120,6 +127,8 @@ CHU-AI/
   Dockerfile
   docker-compose.yml
   README.md
+  data/
+    chu_ai.sqlite3      # 実行時に作成。git管理外
   src/
     README.md
     .env.example
