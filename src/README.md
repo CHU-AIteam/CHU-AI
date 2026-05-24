@@ -64,6 +64,8 @@ Copy-Item src\.env.example src\.env
 | `GEMINI_MODEL` | 任意 | Geminiモデル名 | `gemini-2.5-flash` |
 | `KNOWLEDGE_MODE_DEFAULT` | 任意 | APIで未指定時のナレッジ投入方法 | `search` |
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
+| `CHAT_HISTORY_MAX_EXCHANGES` | 任意 | Geminiへ渡す過去会話の最大往復数 | `5` |
+| `CHAT_HISTORY_WINDOW_MINUTES` | 任意 | Geminiへ渡す過去会話の保持分数 | `2` |
 | `BACKEND_PORT` | 任意 | `start_backend.sh` の起動ポート | `8000` |
 | `KNOWLEDGE_TOP_K` | 任意 | `search` 時に採用するナレッジファイル数 | `4` |
 | `KNOWLEDGE_MAX_CHARS` | 任意 | 採用ナレッジ本文の最大文字数 | `26000` |
@@ -149,6 +151,16 @@ commons
 - 初期値は `30`
 - チャット画面でクリック、入力、スクロールなどがあるとタイマーをリセットする
 - ホームに戻る10秒前から右下にカウントダウンを表示する
+- 無操作でホームへ戻った場合も、手動でホームへ戻った場合も会話履歴を消す
+
+会話履歴:
+
+- ブラウザ上のメモリだけで保持する
+- バックエンド側には保存しない
+- API送信時に、過去会話を `text` に同梱してGeminiへ渡す
+- 最大往復数は `CHAT_HISTORY_MAX_EXCHANGES` で設定する
+- 何分以内の履歴を使うかは `CHAT_HISTORY_WINDOW_MINUTES` で設定する
+- `CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` の場合、履歴を使わない
 
 ## API
 
@@ -165,7 +177,9 @@ curl http://127.0.0.1:8000/api/health
   "status": "ok",
   "model": "gemini-2.5-flash",
   "knowledge_mode_default": "all",
-  "home_return_seconds": 30
+  "home_return_seconds": 30,
+  "chat_history_max_exchanges": 5,
+  "chat_history_window_minutes": 2
 }
 ```
 
@@ -216,6 +230,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 
 - 現在のナレッジモード
 - ホーム復帰秒数
+- 会話履歴の最大往復数と保持分数
 - Local URL
 - LAN URL
 

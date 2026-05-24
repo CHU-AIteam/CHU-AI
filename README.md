@@ -34,6 +34,8 @@ API_KEY=AIzaから始まる実際のGemini APIキー
 GEMINI_MODEL=gemini-2.5-flash
 KNOWLEDGE_MODE_DEFAULT=all
 HOME_RETURN_SECONDS=30
+CHAT_HISTORY_MAX_EXCHANGES=5
+CHAT_HISTORY_WINDOW_MINUTES=2
 ```
 
 ## 起動
@@ -84,8 +86,12 @@ http://<起動PCのIPアドレス>:8000
 | `GEMINI_MODEL` | 使用するGeminiモデル | `gemini-2.5-flash` |
 | `KNOWLEDGE_MODE_DEFAULT` | APIで指定がない場合のナレッジ投入方法 | `all` または `search` |
 | `HOME_RETURN_SECONDS` | チャット画面からホームへ戻る秒数 | `30` |
+| `CHAT_HISTORY_MAX_EXCHANGES` | Geminiへ渡す過去会話の最大往復数 | `5` |
+| `CHAT_HISTORY_WINDOW_MINUTES` | Geminiへ渡す過去会話の保持分数 | `2` |
 
 フロントエンドからの通常送信は `knowledge_mode: "all"` を指定します。APIを直接叩く場合のみ、リクエストごとに `search` / `all` を切り替えられます。
+
+会話履歴はブラウザ上で保持し、API送信時に質問へ同梱します。`CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` にすると、過去履歴をGeminiへ渡しません。
 
 ## 公開リポジトリでの注意
 

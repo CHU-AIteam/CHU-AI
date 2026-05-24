@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import os
+import math
 import re
 import sys
 
@@ -58,6 +59,34 @@ KNOWLEDGE_DIR = Path(__file__).resolve().parent / "knowledge"
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 """チャットUIの静的ファイルディレクトリ"""
 
+
+def GetPositiveIntEnv(name, default):
+    """正の整数環境変数を読む。未設定、不正値、0以下は既定値に戻す。"""
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def GetNonNegativeIntEnv(name, default):
+    """0以上の整数環境変数を読む。未設定、不正値、負数は既定値に戻す。"""
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def GetNonNegativeFloatEnv(name, default):
+    """0以上の数値環境変数を読む。未設定、不正値、負数は既定値に戻す。"""
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if math.isfinite(value) and value >= 0 else default
+
+
 KNOWLEDGE_INDEX_FILE = "99_knowledge_h2_summary_index.md"
 """ナレッジ選定に使うH2要約目次ファイル"""
 
@@ -79,12 +108,25 @@ if KNOWLEDGE_MODE_DEFAULT not in VALID_KNOWLEDGE_MODES:
 HOME_RETURN_SECONDS_DEFAULT = 30
 """チャット画面からホームへ戻るまでの既定秒数"""
 
-try:
-    HOME_RETURN_SECONDS = int(os.getenv("HOME_RETURN_SECONDS", str(HOME_RETURN_SECONDS_DEFAULT)))
-except ValueError:
-    HOME_RETURN_SECONDS = HOME_RETURN_SECONDS_DEFAULT
-if HOME_RETURN_SECONDS <= 0:
-    HOME_RETURN_SECONDS = HOME_RETURN_SECONDS_DEFAULT
+HOME_RETURN_SECONDS = GetPositiveIntEnv("HOME_RETURN_SECONDS", HOME_RETURN_SECONDS_DEFAULT)
+
+CHAT_HISTORY_MAX_EXCHANGES_DEFAULT = 5
+"""フロントエンドがGeminiへ同梱する過去会話の最大往復数"""
+
+CHAT_HISTORY_WINDOW_MINUTES_DEFAULT = 2.0
+"""フロントエンドがGeminiへ同梱する過去会話の保持分数"""
+
+CHAT_HISTORY_MAX_EXCHANGES = GetNonNegativeIntEnv(
+    "CHAT_HISTORY_MAX_EXCHANGES",
+    CHAT_HISTORY_MAX_EXCHANGES_DEFAULT,
+)
+"""フロントエンドへ渡す過去会話の最大往復数。0なら履歴を使わない。"""
+
+CHAT_HISTORY_WINDOW_MINUTES = GetNonNegativeFloatEnv(
+    "CHAT_HISTORY_WINDOW_MINUTES",
+    CHAT_HISTORY_WINDOW_MINUTES_DEFAULT,
+)
+"""フロントエンドへ渡す過去会話の保持分数。0なら履歴を使わない。"""
 
 app = FastAPI(title="Chu-AI Backend")
 """フロントエンドから呼び出されるAPI"""
@@ -520,6 +562,10 @@ def startup_log():
     print("Chu-AI runtime settings:")
     print(f"  Knowledge mode: {KNOWLEDGE_MODE_DEFAULT}")
     print(f"  Home return:    {HOME_RETURN_SECONDS}s")
+    print(
+        "  Chat history:   "
+        f"{CHAT_HISTORY_MAX_EXCHANGES} exchanges / {CHAT_HISTORY_WINDOW_MINUTES:g} min"
+    )
 
 
 @app.get("/api/health")
@@ -530,6 +576,8 @@ def health():
         "model": GEMINI_MODEL,
         "knowledge_mode_default": KNOWLEDGE_MODE_DEFAULT,
         "home_return_seconds": HOME_RETURN_SECONDS,
+        "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
+        "chat_history_window_minutes": CHAT_HISTORY_WINDOW_MINUTES,
     }
 
 

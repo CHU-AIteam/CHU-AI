@@ -6,9 +6,9 @@ const API_URL = (() => {
   return "/api/chat";
 })();
 const HEALTH_URL = API_URL.replace(/\/chat$/, "/health");
-const HISTORY_WINDOW_MS = 2 * 60 * 1000;
 const DEFAULT_HOME_RETURN_SECONDS = 30;
-const HISTORY_MAX_EXCHANGES = 5;
+const DEFAULT_HISTORY_MAX_EXCHANGES = 5;
+const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
 const TYPING_INTERVAL_MS = 18;
 const VALID_PASSWORDS = new Set(["commons", "commons."]);
 const BOT_NAME = "Chu-AI";
@@ -34,6 +34,8 @@ const exchangeHistory = [];
 
 let isInputLocked = false;
 let configuredHomeReturnSeconds = DEFAULT_HOME_RETURN_SECONDS;
+let configuredHistoryMaxExchanges = DEFAULT_HISTORY_MAX_EXCHANGES;
+let configuredHistoryWindowMs = DEFAULT_HISTORY_WINDOW_MINUTES * 60 * 1000;
 let homeReturnTimerId = null;
 let warningTickerId = null;
 let homeReturnDeadlineTs = 0;
@@ -128,7 +130,7 @@ function scheduleReturnToHome() {
     if (!isChatVisible()) {
       return;
     }
-    openTitleScreen({ fromTimeout: true });
+    openTitleScreen({ resetChat: true });
   }, returnAfterMs);
 }
 
@@ -145,10 +147,10 @@ function noteUserActivity(force = false) {
   scheduleReturnToHome();
 }
 
-function openTitleScreen({ fromTimeout = false } = {}) {
+function openTitleScreen({ resetChat = false } = {}) {
   clearHomeReturnTimer();
   clearWarningTicker();
-  if (fromTimeout) {
+  if (resetChat) {
     resetChatState();
   }
   setPasswordError("");
@@ -277,10 +279,15 @@ async function typeMessage(name, text, type, shouldContinue = () => true) {
 }
 
 function buildHistoryPrompt(currentQuestion) {
+  pruneExchangeHistory();
+  if (configuredHistoryMaxExchanges <= 0 || configuredHistoryWindowMs <= 0) {
+    return currentQuestion;
+  }
+
   const now = Date.now();
   const recent = exchangeHistory
-    .filter((item) => now - item.ts <= HISTORY_WINDOW_MS)
-    .slice(-HISTORY_MAX_EXCHANGES);
+    .filter((item) => now - item.ts <= configuredHistoryWindowMs)
+    .slice(-configuredHistoryMaxExchanges);
 
   if (recent.length === 0) {
     return currentQuestion;
@@ -304,9 +311,26 @@ function pushExchange(userText, botText) {
     bot: botText,
     ts: Date.now(),
   });
+  pruneExchangeHistory();
 }
 
-async function loadHomeReturnSeconds() {
+function pruneExchangeHistory() {
+  if (configuredHistoryMaxExchanges <= 0 || configuredHistoryWindowMs <= 0) {
+    exchangeHistory.length = 0;
+    return;
+  }
+
+  const now = Date.now();
+  while (exchangeHistory.length > 0 && now - exchangeHistory[0].ts > configuredHistoryWindowMs) {
+    exchangeHistory.shift();
+  }
+
+  if (exchangeHistory.length > configuredHistoryMaxExchanges) {
+    exchangeHistory.splice(0, exchangeHistory.length - configuredHistoryMaxExchanges);
+  }
+}
+
+async function loadRuntimeSettings() {
   try {
     const response = await fetch(HEALTH_URL);
     if (!response.ok) {
@@ -317,6 +341,18 @@ async function loadHomeReturnSeconds() {
     if (Number.isFinite(candidate) && candidate > 0) {
       configuredHomeReturnSeconds = candidate;
     }
+
+    const historyMax = Number.parseInt(data.chat_history_max_exchanges, 10);
+    if (Number.isFinite(historyMax) && historyMax >= 0) {
+      configuredHistoryMaxExchanges = historyMax;
+    }
+
+    const historyWindowMinutes = Number.parseFloat(data.chat_history_window_minutes);
+    if (Number.isFinite(historyWindowMinutes) && historyWindowMinutes >= 0) {
+      configuredHistoryWindowMs = historyWindowMinutes * 60 * 1000;
+    }
+
+    pruneExchangeHistory();
   } catch (error) {
     // ヘルス取得失敗時はデフォルトを利用
   }
@@ -419,7 +455,7 @@ function bindEvents() {
 
   if (backToHome) {
     backToHome.addEventListener("click", () => {
-      openTitleScreen();
+      openTitleScreen({ resetChat: true });
     });
   }
 
@@ -476,7 +512,7 @@ function bindEvents() {
 }
 
 async function initialize() {
-  await loadHomeReturnSeconds();
+  await loadRuntimeSettings();
   bindEvents();
   showScreen(screenPassword);
   if (passwordInput) {
