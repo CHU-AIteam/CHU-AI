@@ -138,6 +138,7 @@ CHU-AI/
     backend/
       main.py
       requirements.txt
+      chu_ai/
       knowledge/
     frontend/
       index.html

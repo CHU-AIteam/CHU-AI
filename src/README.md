@@ -14,8 +14,9 @@ src/
   start_backend.sh      FastAPIバックエンドを起動
   start_frontend.sh     旧構成用。フロントだけを3000番で起動
   backend/
-    main.py             API、Gemini呼び出し、ナレッジ選択、静的配信
+    main.py             FastAPIエントリーポイント
     requirements.txt    Python依存関係
+    chu_ai/             バックエンド本体（API、サービス、設定）
     knowledge/          回答に使うMarkdownナレッジ
   frontend/
     index.html          画面構造
@@ -39,7 +40,7 @@ Browser
 ポイント:
 
 - フロントエンドは同一オリジンの `/api/chat` にPOSTする
-- `main.py` が `frontend/` を静的ファイルとして配信する
+- `main.py`（`chu_ai/api.py`）が `frontend/` を静的ファイルとして配信する
 - `start_frontend.sh` は旧構成やフロント単体確認用で、通常運用では使わない
 
 ## 環境変数
