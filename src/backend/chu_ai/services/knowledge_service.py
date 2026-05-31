@@ -1,3 +1,9 @@
+"""knowledgeディレクトリから回答材料を選ぶサービス。
+
+検索語抽出とインデックススコアリングで対象ファイルを決め、
+生成APIの呼び出しは担当しない。
+"""
+
 import re
 
 from chu_ai.config import (

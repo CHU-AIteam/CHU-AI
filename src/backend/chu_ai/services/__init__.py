@@ -1,1 +1,4 @@
-"""Service layer for Chu-AI backend."""
+"""Chu-AIバックエンドのservice層パッケージ。
+
+HTTP層から独立したユースケース処理を提供する。
+"""

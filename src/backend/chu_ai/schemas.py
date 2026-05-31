@@ -1,3 +1,9 @@
+"""HTTP入出力で使うPydanticスキーマ定義。
+
+API境界のデータ構造を明確にし、
+バリデーション以外の処理ロジックは持たない。
+"""
+
 from pydantic import BaseModel, Field
 
 from chu_ai.config import KNOWLEDGE_MODE_DEFAULT

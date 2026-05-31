@@ -1,3 +1,9 @@
+"""FastAPIアプリのHTTP層。
+
+ルーティング、入出力の検証、レスポンス整形を担当し、
+知識検索や文章生成の意思決定はservice層へ委譲する。
+"""
+
 import sys
 
 from fastapi import FastAPI

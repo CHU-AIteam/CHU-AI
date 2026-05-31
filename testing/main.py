@@ -1,3 +1,9 @@
+"""Gemini応答を手元で試すための対話CLI。
+
+knowledge全文を渡して回答を確認する検証用コードで、
+本番APIのエンドポイント処理とは分離している。
+"""
+
 from pathlib import Path
 
 import os
