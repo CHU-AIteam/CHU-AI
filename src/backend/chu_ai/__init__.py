@@ -1,1 +1,4 @@
-"""Chu-AI backend package."""
+"""Chu-AIバックエンドのルートパッケージ。
+
+API層・service層・設定モジュールをまとめる。
+"""

@@ -1,3 +1,9 @@
+"""Gemini呼び出しと生成結果整形を担当するサービス。
+
+プロンプト構築、API実行、JSON正規化を行い、
+知識ファイル選定はknowledge_serviceに委譲する。
+"""
+
 import json
 import os
 import re

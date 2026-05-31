@@ -1,3 +1,9 @@
+"""チャットログの整形と永続化を担当するサービス。
+
+履歴テキストの抽出補助とSQLite保存を提供し、
+回答生成の意思決定は行わない。
+"""
+
 from pathlib import Path
 
 import json

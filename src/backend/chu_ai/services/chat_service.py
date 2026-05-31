@@ -1,3 +1,9 @@
+"""チャット1件のユースケースを束ねるサービス。
+
+モード正規化、知識取得、生成処理の呼び出し順を管理し、
+HTTP詳細やDB保存の責務は持たない。
+"""
+
 from chu_ai.services.chat_log_service import (
     compact_log_text,
     count_history_entries_for_log,
