@@ -5,8 +5,31 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./src/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: chu_ai
+      POSTGRES_USER: chu_ai
+      POSTGRES_PASSWORD: chu_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chu_ai -d chu_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
