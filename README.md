@@ -1,6 +1,6 @@
 # Chu-AI
 
-中部大学向けの案内チャットボットです。FastAPIバックエンドがAPIとフロントエンドを同じ `8000` 番ポートで配信します。
+中部大学向けの案内チャットボットです。FastAPIバックエンドがAPIとフロントエンドを同じ `8000` 番ポートで配信します。検索は `legacy`（既存）と `hybrid`（PostgreSQL + ベクトル検索）を切り替えできます。
 
 このREADMEは、リポジトリ全体の最短起動手順をまとめています。`src` 配下の詳しい構成や運用は [src/README.md](src/README.md) を参照してください。
 
@@ -33,11 +33,15 @@ Copy-Item src\.env.example src\.env
 API_KEY=AIzaから始まる実際のGemini APIキー
 GEMINI_MODEL=gemini-2.5-flash
 KNOWLEDGE_MODE_DEFAULT=all
+SEARCH_BACKEND_DEFAULT=hybrid
 HOME_RETURN_SECONDS=30
 CHAT_HISTORY_MAX_EXCHANGES=5
 CHAT_HISTORY_WINDOW_MINUTES=2
 CHAT_LOG_ENABLED=true
 CHAT_LOG_DB_PATH=data/chu_ai.sqlite3
+POSTGRES_DSN=postgresql://chu_ai:chu_ai@postgres:5432/chu_ai
+HYBRID_EMBEDDING_MODEL=gemini-embedding-001
+HYBRID_EMBEDDING_DIM=768
 ```
 
 ## 起動
@@ -50,6 +54,12 @@ docker compose up --build
 
 ```text
 http://127.0.0.1:8000
+```
+
+`SEARCH_BACKEND_DEFAULT=hybrid` の場合は、初回だけインデックス作成を実行します。
+
+```bash
+docker compose exec chu-ai python rebuild_hybrid_index.py
 ```
 
 2回目以降、コードや依存関係を変更していない場合は次で起動できます。
@@ -87,11 +97,15 @@ http://<起動PCのIPアドレス>:8000
 | `API_KEY` | Gemini APIキー | `AIza...` |
 | `GEMINI_MODEL` | 使用するGeminiモデル | `gemini-2.5-flash` |
 | `KNOWLEDGE_MODE_DEFAULT` | APIで指定がない場合のナレッジ投入方法 | `all` または `search` |
+| `SEARCH_BACKEND_DEFAULT` | `search` 時の検索方式 | `legacy` または `hybrid` |
 | `HOME_RETURN_SECONDS` | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | Geminiへ渡す過去会話の保持分数 | `2` |
 | `CHAT_LOG_ENABLED` | 質問・回答ログをSQLiteへ保存するか | `true` |
 | `CHAT_LOG_DB_PATH` | SQLiteログDBの保存先 | `data/chu_ai.sqlite3` |
+| `POSTGRES_DSN` | hybrid検索用PostgreSQL接続文字列 | `postgresql://chu_ai:chu_ai@postgres:5432/chu_ai` |
+| `HYBRID_EMBEDDING_MODEL` | 埋め込みモデル | `gemini-embedding-001` |
+| `HYBRID_EMBEDDING_DIM` | 埋め込みベクトル次元 | `768` |
 
 フロントエンドからの通常送信は `knowledge_mode: "all"` を指定します。APIを直接叩く場合のみ、リクエストごとに `search` / `all` を切り替えられます。
 

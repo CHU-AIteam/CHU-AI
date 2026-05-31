@@ -10,6 +10,20 @@ import math
 import os
 
 
+def get_bool_env(name: str, default: bool) -> bool:
+    """真偽値環境変数を読む。未設定は既定値を返す。"""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def get_positive_int_env(name: str, default: int) -> int:
     """正の整数環境変数を読む。未設定、不正値、0以下は既定値に戻す。"""
     try:
@@ -37,6 +51,14 @@ def get_non_negative_float_env(name: str, default: float) -> float:
     return value if math.isfinite(value) and value >= 0 else default
 
 
+def get_choice_env(name: str, default: str, valid_values: set[str]) -> str:
+    """文字列環境変数を読む。無効値は既定値へ戻す。"""
+    value = os.getenv(name, default).strip().lower()
+    if value in valid_values:
+        return value
+    return default
+
+
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 """文章生成に使うGeminiモデル"""
 
@@ -52,11 +74,62 @@ KNOWLEDGE_MAX_CHARS = int(os.getenv("KNOWLEDGE_MAX_CHARS", "26000"))
 VALID_KNOWLEDGE_MODES = {"all", "search"}
 """利用可能なナレッジ投入モード"""
 
-KNOWLEDGE_MODE_DEFAULT = os.getenv("KNOWLEDGE_MODE_DEFAULT", "search").strip().lower()
+KNOWLEDGE_MODE_DEFAULT = get_choice_env(
+    "KNOWLEDGE_MODE_DEFAULT", "search", VALID_KNOWLEDGE_MODES
+)
 """knowledge_mode未指定時に使う既定モード"""
 
-if KNOWLEDGE_MODE_DEFAULT not in VALID_KNOWLEDGE_MODES:
-    KNOWLEDGE_MODE_DEFAULT = "search"
+VALID_SEARCH_BACKENDS = {"legacy", "hybrid"}
+"""利用可能な検索バックエンド"""
+
+SEARCH_BACKEND_DEFAULT = get_choice_env(
+    "SEARCH_BACKEND_DEFAULT",
+    "legacy",
+    VALID_SEARCH_BACKENDS,
+)
+"""knowledge_mode=search で使う検索バックエンド"""
+
+POSTGRES_DSN = os.getenv("POSTGRES_DSN", "").strip()
+"""ハイブリッド検索用PostgreSQL DSN"""
+
+POSTGRES_CONNECT_TIMEOUT_SECONDS = get_positive_int_env(
+    "POSTGRES_CONNECT_TIMEOUT_SECONDS",
+    5,
+)
+"""PostgreSQL接続タイムアウト秒数"""
+
+HYBRID_AUTO_INIT_DB = get_bool_env("HYBRID_AUTO_INIT_DB", True)
+"""起動時にhybrid検索用テーブルを自動初期化するか"""
+
+HYBRID_EMBEDDING_MODEL = os.getenv(
+    "HYBRID_EMBEDDING_MODEL",
+    "gemini-embedding-001",
+).strip()
+"""埋め込みに使うGeminiモデル"""
+
+HYBRID_EMBEDDING_DIM = get_positive_int_env("HYBRID_EMBEDDING_DIM", 768)
+"""埋め込みベクトル次元数"""
+
+HYBRID_CHUNK_SIZE = get_positive_int_env("HYBRID_CHUNK_SIZE", 500)
+"""インデックス作成時の1チャンクあたり文字数上限"""
+
+HYBRID_CHUNK_OVERLAP = get_non_negative_int_env("HYBRID_CHUNK_OVERLAP", 80)
+"""連続チャンク間の重複文字数"""
+
+if HYBRID_CHUNK_OVERLAP >= HYBRID_CHUNK_SIZE:
+    HYBRID_CHUNK_OVERLAP = max(HYBRID_CHUNK_SIZE // 4, 0)
+
+HYBRID_KEYWORD_TOP_K = get_positive_int_env("HYBRID_KEYWORD_TOP_K", 20)
+"""キーワード検索で取得する候補件数"""
+
+HYBRID_VECTOR_TOP_K = get_positive_int_env("HYBRID_VECTOR_TOP_K", 20)
+"""ベクトル検索で取得する候補件数"""
+
+HYBRID_FINAL_TOP_K = get_positive_int_env("HYBRID_FINAL_TOP_K", 6)
+"""RRF統合後に採用する最終候補件数"""
+
+HYBRID_RRF_K = get_positive_int_env("HYBRID_RRF_K", 60)
+"""RRF統合で使う安定化係数"""
 
 HOME_RETURN_SECONDS_DEFAULT = 30
 """チャット画面からホームへ戻るまでの既定秒数"""
