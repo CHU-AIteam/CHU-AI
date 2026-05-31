@@ -35,6 +35,16 @@ case "$RAW_KNOWLEDGE_MODE" in
     ;;
 esac
 
+RAW_SEARCH_BACKEND="${SEARCH_BACKEND_DEFAULT:-legacy}"
+case "$RAW_SEARCH_BACKEND" in
+  legacy|hybrid)
+    SEARCH_BACKEND_EFFECTIVE="$RAW_SEARCH_BACKEND"
+    ;;
+  *)
+    SEARCH_BACKEND_EFFECTIVE="legacy"
+    ;;
+esac
+
 RAW_HOME_RETURN_SECONDS="${HOME_RETURN_SECONDS:-30}"
 case "$RAW_HOME_RETURN_SECONDS" in
   ''|*[!0-9]*)
@@ -72,6 +82,7 @@ fi
 echo
 echo "Runtime settings:"
 echo "  Knowledge mode: ${KNOWLEDGE_MODE_EFFECTIVE}"
+echo "  Search backend: ${SEARCH_BACKEND_EFFECTIVE}"
 echo "  Home return:    ${HOME_RETURN_SECONDS_EFFECTIVE}s"
 echo
 echo "How to change settings:"

@@ -4,17 +4,17 @@
 生成APIの呼び出しは担当しない。
 """
 
-import re
-
 from chu_ai.config import (
     KNOWLEDGE_DIR,
     KNOWLEDGE_INDEX_FILE,
     KNOWLEDGE_MAX_CHARS,
     KNOWLEDGE_MODE_DEFAULT,
     KNOWLEDGE_TOP_K,
+    SEARCH_BACKEND_DEFAULT,
     VALID_KNOWLEDGE_MODES,
 )
 from chu_ai.services.chat_log_service import format_used_files_for_log
+from chu_ai.services.search_term_service import extract_search_terms
 
 
 def normalize_knowledge_mode(knowledge_mode: str | None) -> str:
@@ -64,49 +64,6 @@ def build_knowledge_texts(
         return "回答元情報はまだ登録されていません。", []
 
     return "\n\n".join(knowledge_texts), used_files
-
-
-def extract_search_terms(text: str) -> list[str]:
-    """質問文から知識選定用の検索語を抽出する関数"""
-    normalized = text.lower()
-    splitter_words = [
-        "について",
-        "とは",
-        "って",
-        "を",
-        "が",
-        "は",
-        "に",
-        "で",
-        "と",
-        "も",
-        "の",
-        "か",
-        "？",
-        "?",
-        "、",
-        "。",
-    ]
-    for word in splitter_words:
-        normalized = normalized.replace(word, " ")
-
-    terms = re.findall(r"[0-9A-Za-zぁ-んァ-ヶ一-龯ー]{2,}", normalized)
-    stop_words = {
-        "です",
-        "ます",
-        "したい",
-        "ください",
-        "について",
-        "どこ",
-        "なに",
-        "何",
-        "ある",
-        "ない",
-        "知りたい",
-        "教えて",
-        "中部大学",
-    }
-    return [term for term in terms if term not in stop_words]
 
 
 def load_knowledge_index() -> list[tuple[str, str]]:
@@ -226,6 +183,13 @@ def search_knowledge(user_text: str, knowledge_mode: str) -> tuple[str, list[str
     """ナレッジ投入モードに応じて知識を組み立てる関数"""
     if knowledge_mode == "all":
         return load_all_knowledge()
+
+    if SEARCH_BACKEND_DEFAULT == "hybrid":
+        from chu_ai.services.hybrid_search_service import (
+            search_knowledge_hybrid_with_fallback,
+        )
+
+        return search_knowledge_hybrid_with_fallback(user_text)
 
     # 99_knowledge_h2_summary_index を一次参照して関連knowledgeを選ぶ。
     return load_search_mode_knowledge(user_text)

@@ -18,7 +18,9 @@ from chu_ai.config import (
     FRONTEND_DIR,
     GEMINI_MODEL,
     HOME_RETURN_SECONDS,
+    HYBRID_AUTO_INIT_DB,
     KNOWLEDGE_MODE_DEFAULT,
+    SEARCH_BACKEND_DEFAULT,
 )
 from chu_ai.schemas import ChatRequest, ChatResponse
 from chu_ai.services.chat_log_service import (
@@ -33,6 +35,8 @@ from chu_ai.services.chat_log_service import (
 )
 from chu_ai.services.chat_service import process_user_request
 from chu_ai.services.generation_service import normalize_recommended_questions
+from chu_ai.services.hybrid_search_service import initialize_hybrid_search_runtime
+from chu_ai.services.hybrid_store_service import has_hybrid_database_config
 from chu_ai.services.knowledge_service import normalize_knowledge_mode
 
 
@@ -64,8 +68,16 @@ def startup_log() -> None:
     if CHAT_LOG_ENABLED:
         initialize_chat_log_db()
 
+    hybrid_init_error = None
+    if SEARCH_BACKEND_DEFAULT == "hybrid":
+        try:
+            initialize_hybrid_search_runtime()
+        except Exception as error:
+            hybrid_init_error = str(error)
+
     print("Chu-AI runtime settings:")
     print(f"  Knowledge mode: {KNOWLEDGE_MODE_DEFAULT}")
+    print(f"  Search backend: {SEARCH_BACKEND_DEFAULT}")
     print(f"  Home return:    {HOME_RETURN_SECONDS}s")
     print(
         "  Chat history:   "
@@ -75,6 +87,13 @@ def startup_log() -> None:
         print(f"  Chat log:       enabled ({resolve_chat_log_db_path()})")
     else:
         print("  Chat log:       disabled")
+    if SEARCH_BACKEND_DEFAULT == "hybrid":
+        print(f"  Hybrid DB:      {'configured' if has_hybrid_database_config() else 'not configured'}")
+        print(f"  Hybrid autoinit:{'enabled' if HYBRID_AUTO_INIT_DB else 'disabled'}")
+        if hybrid_init_error:
+            print(f"  Hybrid init:    failed ({hybrid_init_error})")
+        else:
+            print("  Hybrid init:    ok")
 
 
 @app.get("/api/health")
@@ -88,6 +107,8 @@ def health() -> dict:
         "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
         "chat_history_window_minutes": CHAT_HISTORY_WINDOW_MINUTES,
         "chat_log_enabled": CHAT_LOG_ENABLED,
+        "search_backend_default": SEARCH_BACKEND_DEFAULT,
+        "hybrid_db_configured": has_hybrid_database_config(),
     }
 
 

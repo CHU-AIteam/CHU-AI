@@ -15,6 +15,7 @@ src/
   start_frontend.sh     旧構成用。フロントだけを3000番で起動
   backend/
     main.py             FastAPIエントリーポイント
+    rebuild_hybrid_index.py  hybrid検索インデックス再構築CLI
     requirements.txt    Python依存関係
     chu_ai/             バックエンド本体（API、サービス、設定）
     knowledge/          回答に使うMarkdownナレッジ
@@ -64,6 +65,7 @@ Copy-Item src\.env.example src\.env
 | `API_KEY` | 必須 | Gemini APIキー | なし |
 | `GEMINI_MODEL` | 任意 | Geminiモデル名 | `gemini-2.5-flash` |
 | `KNOWLEDGE_MODE_DEFAULT` | 任意 | APIで未指定時のナレッジ投入方法 | `search` |
+| `SEARCH_BACKEND_DEFAULT` | 任意 | `knowledge_mode=search` の検索方式 | `legacy` |
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | 任意 | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | 任意 | Geminiへ渡す過去会話の保持分数 | `2` |
@@ -72,6 +74,15 @@ Copy-Item src\.env.example src\.env
 | `BACKEND_PORT` | 任意 | `start_backend.sh` の起動ポート | `8000` |
 | `KNOWLEDGE_TOP_K` | 任意 | `search` 時に採用するナレッジファイル数 | `4` |
 | `KNOWLEDGE_MAX_CHARS` | 任意 | 採用ナレッジ本文の最大文字数 | `26000` |
+| `POSTGRES_DSN` | 任意 | hybrid検索用PostgreSQL DSN | 空 |
+| `HYBRID_EMBEDDING_MODEL` | 任意 | 埋め込みモデル | `gemini-embedding-001` |
+| `HYBRID_EMBEDDING_DIM` | 任意 | 埋め込み次元 | `768` |
+| `HYBRID_CHUNK_SIZE` | 任意 | 1チャンクの文字数上限 | `500` |
+| `HYBRID_CHUNK_OVERLAP` | 任意 | チャンク間の重複文字数 | `80` |
+| `HYBRID_KEYWORD_TOP_K` | 任意 | キーワード検索の候補件数 | `20` |
+| `HYBRID_VECTOR_TOP_K` | 任意 | ベクトル検索の候補件数 | `20` |
+| `HYBRID_FINAL_TOP_K` | 任意 | RRF統合後の採用件数 | `6` |
+| `HYBRID_RRF_K` | 任意 | RRF安定化係数 | `60` |
 | `FRONTEND_PORT` | 任意 | `start_frontend.sh` の起動ポート | `3000` |
 
 注意:
@@ -101,6 +112,12 @@ docker compose down
 ```
 
 Dockerでは `docker-compose.yml` が `src/.env` を読み込みます。`src/.env` がない、または `API_KEY` が未設定の場合はGemini呼び出しで失敗します。
+
+`SEARCH_BACKEND_DEFAULT=hybrid` の場合は、初回にインデックス再構築を実行してください。
+
+```bash
+docker compose exec chu-ai python rebuild_hybrid_index.py
+```
 
 ## ローカルスクリプトで起動
 
@@ -263,6 +280,13 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 - `99_knowledge_h2_summary_index.md` を使って関連ファイルを選ぶ
 - 入力量を抑えられる
 - 検索に失敗すると必要情報が落ちる可能性がある
+
+`SEARCH_BACKEND_DEFAULT=hybrid` の場合、`search` モードで次を実行します。
+
+- PostgreSQLのキーワード検索候補
+- PostgreSQLのベクトル検索候補
+- RRFで統合した上位チャンクを採用
+- 失敗時は既存の `legacy` 検索へフォールバック
 
 現在のフロントエンドは通常送信時に `knowledge_mode: "all"` を指定します。そのため、UIからの送信では `KNOWLEDGE_MODE_DEFAULT` よりフロントエンド指定が優先されます。
 
