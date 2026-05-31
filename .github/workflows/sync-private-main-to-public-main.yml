@@ -1,0 +1,54 @@
+name: Sync Private Main To Public Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-private-main-to-public-main
+  cancel-in-progress: false
+
+jobs:
+  sync-main:
+    name: Sync main branch to public repository
+    runs-on: ubuntu-latest
+    if: github.repository == 'CHU-AIteam/CHU-AI_dev'
+
+    steps:
+      - name: Checkout private repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate required secret
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+        run: |
+          set -eu
+          if [ -z "${PUBLIC_REPO_PAT}" ]; then
+            echo "Missing secret: PUBLIC_REPO_PAT"
+            echo "Create it in CHU-AIteam/CHU-AI_dev -> Settings -> Secrets and variables -> Actions"
+            exit 1
+          fi
+
+      - name: Push private main to public main
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+          PUBLIC_REPOSITORY: CHU-AIteam/CHU-AI
+        run: |
+          set -eu
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add public "https://x-access-token:${PUBLIC_REPO_PAT}@github.com/${PUBLIC_REPOSITORY}.git"
+          git fetch public main
+
+          # Fast-forward できる場合だけ公開側 main を更新する。
+          # 公開側で手動コミットが先行している場合は失敗し、意図しない上書きを防ぐ。
+          git push public refs/heads/main:refs/heads/main
