@@ -32,7 +32,7 @@ Copy-Item src\.env.example src\.env
 ```text
 API_KEY=AIzaから始まる実際のGemini APIキー
 GEMINI_MODEL=gemini-2.5-flash
-KNOWLEDGE_MODE_DEFAULT=all
+KNOWLEDGE_MODE_DEFAULT=search
 SEARCH_BACKEND_DEFAULT=hybrid
 HOME_RETURN_SECONDS=30
 CHAT_HISTORY_MAX_EXCHANGES=5
@@ -107,7 +107,7 @@ http://<起動PCのIPアドレス>:8000
 | `HYBRID_EMBEDDING_MODEL` | 埋め込みモデル | `gemini-embedding-001` |
 | `HYBRID_EMBEDDING_DIM` | 埋め込みベクトル次元 | `768` |
 
-フロントエンドからの通常送信は `knowledge_mode: "all"` を指定します。APIを直接叩く場合のみ、リクエストごとに `search` / `all` を切り替えられます。
+フロントエンドからの通常送信は `knowledge_mode: "search"` を指定します。APIを直接叩く場合のみ、リクエストごとに `search` / `all` を切り替えられます。
 
 会話履歴はブラウザ上で保持し、API送信時に質問へ同梱します。`CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` にすると、過去履歴をGeminiへ渡しません。
 

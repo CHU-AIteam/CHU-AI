@@ -288,7 +288,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 - RRFで統合した上位チャンクを採用
 - 失敗時は既存の `legacy` 検索へフォールバック
 
-現在のフロントエンドは通常送信時に `knowledge_mode: "all"` を指定します。そのため、UIからの送信では `KNOWLEDGE_MODE_DEFAULT` よりフロントエンド指定が優先されます。
+現在のフロントエンドは通常送信時に `knowledge_mode: "search"` を指定します。そのため、UIからの送信では `KNOWLEDGE_MODE_DEFAULT` よりフロントエンド指定が優先されます。
 
 `KNOWLEDGE_MODE_DEFAULT` が効くのは、APIリクエストで `knowledge_mode` を省略した場合です。
 
