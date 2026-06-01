@@ -10,7 +10,6 @@ from chu_ai.config import (
     KNOWLEDGE_MAX_CHARS,
     KNOWLEDGE_MODE_DEFAULT,
     KNOWLEDGE_TOP_K,
-    SEARCH_BACKEND_DEFAULT,
     VALID_KNOWLEDGE_MODES,
 )
 from chu_ai.services.chat_log_service import format_used_files_for_log
@@ -180,16 +179,8 @@ def load_all_knowledge() -> tuple[str, list[str]]:
 
 
 def search_knowledge(user_text: str, knowledge_mode: str) -> tuple[str, list[str]]:
-    """ナレッジ投入モードに応じて知識を組み立てる関数"""
-    if knowledge_mode == "all":
-        return load_all_knowledge()
+    """常にhybrid検索で知識を組み立てる関数。"""
+    del knowledge_mode
+    from chu_ai.services.hybrid_search_service import search_knowledge_hybrid
 
-    if SEARCH_BACKEND_DEFAULT == "hybrid":
-        from chu_ai.services.hybrid_search_service import (
-            search_knowledge_hybrid_with_fallback,
-        )
-
-        return search_knowledge_hybrid_with_fallback(user_text)
-
-    # 99_knowledge_h2_summary_index を一次参照して関連knowledgeを選ぶ。
-    return load_search_mode_knowledge(user_text)
+    return search_knowledge_hybrid(user_text)

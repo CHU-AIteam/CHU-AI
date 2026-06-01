@@ -19,8 +19,6 @@ from chu_ai.config import (
     GEMINI_MODEL,
     HOME_RETURN_SECONDS,
     HYBRID_AUTO_INIT_DB,
-    KNOWLEDGE_MODE_DEFAULT,
-    SEARCH_BACKEND_DEFAULT,
 )
 from chu_ai.schemas import ChatRequest, ChatResponse
 from chu_ai.services.chat_log_service import (
@@ -33,11 +31,14 @@ from chu_ai.services.chat_log_service import (
     resolve_chat_log_db_path,
     save_chat_log,
 )
-from chu_ai.services.chat_service import process_user_request
+from chu_ai.services.chat_service import FORCED_KNOWLEDGE_MODE, process_user_request
 from chu_ai.services.generation_service import normalize_recommended_questions
 from chu_ai.services.hybrid_search_service import initialize_hybrid_search_runtime
 from chu_ai.services.hybrid_store_service import has_hybrid_database_config
-from chu_ai.services.knowledge_service import normalize_knowledge_mode
+
+
+FORCED_SEARCH_BACKEND = "hybrid"
+"""クライアント指定や環境変数に関係なく使う検索方式。"""
 
 
 def _configure_stdio_utf8() -> None:
@@ -69,15 +70,14 @@ def startup_log() -> None:
         initialize_chat_log_db()
 
     hybrid_init_error = None
-    if SEARCH_BACKEND_DEFAULT == "hybrid":
-        try:
-            initialize_hybrid_search_runtime()
-        except Exception as error:
-            hybrid_init_error = str(error)
+    try:
+        initialize_hybrid_search_runtime()
+    except Exception as error:
+        hybrid_init_error = str(error)
 
     print("Chu-AI runtime settings:")
-    print(f"  Knowledge mode: {KNOWLEDGE_MODE_DEFAULT}")
-    print(f"  Search backend: {SEARCH_BACKEND_DEFAULT}")
+    print(f"  Knowledge mode: {FORCED_KNOWLEDGE_MODE} (forced)")
+    print(f"  Search backend: {FORCED_SEARCH_BACKEND} (forced)")
     print(f"  Home return:    {HOME_RETURN_SECONDS}s")
     print(
         "  Chat history:   "
@@ -87,13 +87,12 @@ def startup_log() -> None:
         print(f"  Chat log:       enabled ({resolve_chat_log_db_path()})")
     else:
         print("  Chat log:       disabled")
-    if SEARCH_BACKEND_DEFAULT == "hybrid":
-        print(f"  Hybrid DB:      {'configured' if has_hybrid_database_config() else 'not configured'}")
-        print(f"  Hybrid autoinit:{'enabled' if HYBRID_AUTO_INIT_DB else 'disabled'}")
-        if hybrid_init_error:
-            print(f"  Hybrid init:    failed ({hybrid_init_error})")
-        else:
-            print("  Hybrid init:    ok")
+    print(f"  Hybrid DB:      {'configured' if has_hybrid_database_config() else 'not configured'}")
+    print(f"  Hybrid autoinit:{'enabled' if HYBRID_AUTO_INIT_DB else 'disabled'}")
+    if hybrid_init_error:
+        print(f"  Hybrid init:    failed ({hybrid_init_error})")
+    else:
+        print("  Hybrid init:    ok")
 
 
 @app.get("/api/health")
@@ -102,12 +101,12 @@ def health() -> dict:
     return {
         "status": "ok",
         "model": GEMINI_MODEL,
-        "knowledge_mode_default": KNOWLEDGE_MODE_DEFAULT,
+        "knowledge_mode_default": FORCED_KNOWLEDGE_MODE,
         "home_return_seconds": HOME_RETURN_SECONDS,
         "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
         "chat_history_window_minutes": CHAT_HISTORY_WINDOW_MINUTES,
         "chat_log_enabled": CHAT_LOG_ENABLED,
-        "search_backend_default": SEARCH_BACKEND_DEFAULT,
+        "search_backend_default": FORCED_SEARCH_BACKEND,
         "hybrid_db_configured": has_hybrid_database_config(),
     }
 
@@ -116,14 +115,13 @@ def health() -> dict:
 def chat(request: ChatRequest) -> ChatResponse:
     """フロントエンドから質問を受け取り、回答を返すAPI"""
     request_text = request.text.strip()
-    knowledge_mode = normalize_knowledge_mode(request.knowledge_mode)
     if not request_text:
         return ChatResponse(
             answer="質問を入力してね。",
             can_answer=False,
             recommended_questions=normalize_recommended_questions([], ""),
             used_files=[],
-            knowledge_mode=knowledge_mode,
+            knowledge_mode=FORCED_KNOWLEDGE_MODE,
         )
 
     asked_at = current_asked_at()
@@ -131,7 +129,7 @@ def chat(request: ChatRequest) -> ChatResponse:
     used_conversation = extract_conversation_history(request_text)
 
     generation, used_files, normalized_mode = process_user_request(
-        request_text, knowledge_mode
+        request_text, request.knowledge_mode
     )
 
     save_chat_log(
