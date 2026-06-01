@@ -561,7 +561,7 @@ function bindEvents() {
 
   if (question) {
     question.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+      if (event.key !== "Enter" || event.isComposing) {
         return;
       }
       event.preventDefault();
