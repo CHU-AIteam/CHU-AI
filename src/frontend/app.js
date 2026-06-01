@@ -42,6 +42,7 @@ let warningTickerId = null;
 let homeReturnDeadlineTs = 0;
 let lastActivityResetAt = 0;
 let chatStateVersion = 0;
+let lastEnterSubmitAt = 0;
 
 function showScreen(screenElement) {
   [screenPassword, screenTitle, chatApp].forEach((element) => {
@@ -560,12 +561,37 @@ function bindEvents() {
   }
 
   if (question) {
+    const submitFromEnter = () => {
+      const now = Date.now();
+      if (now - lastEnterSubmitAt < 120) {
+        return;
+      }
+      lastEnterSubmitAt = now;
+      sendQuestion(question.value);
+    };
+
     question.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing) {
+      const isEnterKey =
+        event.key === "Enter" ||
+        event.code === "Enter" ||
+        event.code === "NumpadEnter" ||
+        event.keyCode === 13;
+      if (!isEnterKey) {
         return;
       }
       event.preventDefault();
-      sendQuestion(question.value);
+      submitFromEnter();
+    });
+
+    question.addEventListener("beforeinput", (event) => {
+      const isLineBreakInput =
+        event.inputType === "insertLineBreak" ||
+        event.inputType === "insertParagraph";
+      if (!isLineBreakInput) {
+        return;
+      }
+      event.preventDefault();
+      submitFromEnter();
     });
   }
 
