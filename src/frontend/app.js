@@ -450,7 +450,7 @@ async function sendQuestion(text) {
       },
       body: JSON.stringify({
         text: promptText,
-        knowledge_mode: "all",
+        knowledge_mode: "search",
       }),
     });
 
@@ -559,16 +559,17 @@ function bindEvents() {
     });
   }
 
-  bindQuickQuestionButtons();
-
   if (question) {
     question.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        sendQuestion(question.value);
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+        return;
       }
+      event.preventDefault();
+      sendQuestion(question.value);
     });
   }
+
+  bindQuickQuestionButtons();
 }
 
 async function initialize() {
