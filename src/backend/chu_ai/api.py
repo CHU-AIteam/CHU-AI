@@ -6,29 +6,34 @@
 
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from chu_ai.config import (
+    CHAT_LOG_ADMIN_API_KEY,
     CHAT_HISTORY_MAX_EXCHANGES,
     CHAT_HISTORY_WINDOW_MINUTES,
     CHAT_LOG_ENABLED,
+    CHAT_LOG_LIST_DEFAULT_LIMIT,
+    CHAT_LOG_LIST_MAX_LIMIT,
     FRONTEND_DIR,
     GEMINI_MODEL,
     HOME_RETURN_SECONDS,
     HYBRID_AUTO_INIT_DB,
 )
-from chu_ai.schemas import ChatRequest, ChatResponse
+from chu_ai.schemas import ChatLogListResponse, ChatRequest, ChatResponse
 from chu_ai.services.chat_log_service import (
     compact_log_text,
     current_asked_at,
     extract_conversation_history,
     extract_current_question_for_log,
     format_used_files_for_log,
+    get_chat_log_storage_label,
+    has_chat_log_database_config,
     initialize_chat_log_db,
-    resolve_chat_log_db_path,
+    list_chat_logs,
     save_chat_log,
 )
 from chu_ai.services.chat_service import FORCED_KNOWLEDGE_MODE, process_user_request
@@ -39,6 +44,17 @@ from chu_ai.services.hybrid_store_service import has_hybrid_database_config
 
 FORCED_SEARCH_BACKEND = "hybrid"
 """クライアント指定や環境変数に関係なく使う検索方式。"""
+
+
+def _require_admin_api_key(x_admin_key: str | None = Header(default=None)) -> None:
+    """管理API用の固定キーを検証する。"""
+    if not CHAT_LOG_ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="CHAT_LOG_ADMIN_API_KEY が未設定のため管理APIは無効です。",
+        )
+    if x_admin_key != CHAT_LOG_ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="管理APIキーが不正です。")
 
 
 def _configure_stdio_utf8() -> None:
@@ -66,8 +82,12 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_log() -> None:
     """バックエンド起動時の設定表示"""
+    chat_log_init_error = None
     if CHAT_LOG_ENABLED:
-        initialize_chat_log_db()
+        try:
+            initialize_chat_log_db()
+        except Exception as error:
+            chat_log_init_error = str(error)
 
     hybrid_init_error = None
     try:
@@ -84,9 +104,18 @@ def startup_log() -> None:
         f"{CHAT_HISTORY_MAX_EXCHANGES} exchanges / {CHAT_HISTORY_WINDOW_MINUTES:g} min"
     )
     if CHAT_LOG_ENABLED:
-        print(f"  Chat log:       enabled ({resolve_chat_log_db_path()})")
+        chat_log_status = get_chat_log_storage_label()
+        if chat_log_init_error:
+            chat_log_status = f"{chat_log_status}, init failed ({chat_log_init_error})"
+        elif not has_chat_log_database_config():
+            chat_log_status = f"{chat_log_status}, not configured"
+        print(f"  Chat log:       enabled ({chat_log_status})")
     else:
         print("  Chat log:       disabled")
+    print(
+        "  Admin log API:  "
+        f"{'enabled' if CHAT_LOG_ADMIN_API_KEY else 'disabled'}"
+    )
     print(f"  Hybrid DB:      {'configured' if has_hybrid_database_config() else 'not configured'}")
     print(f"  Hybrid autoinit:{'enabled' if HYBRID_AUTO_INIT_DB else 'disabled'}")
     if hybrid_init_error:
@@ -106,6 +135,9 @@ def health() -> dict:
         "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
         "chat_history_window_minutes": CHAT_HISTORY_WINDOW_MINUTES,
         "chat_log_enabled": CHAT_LOG_ENABLED,
+        "chat_log_storage": get_chat_log_storage_label(),
+        "chat_log_db_configured": has_chat_log_database_config(),
+        "chat_log_admin_api_enabled": bool(CHAT_LOG_ADMIN_API_KEY),
         "search_backend_default": FORCED_SEARCH_BACKEND,
         "hybrid_db_configured": has_hybrid_database_config(),
     }
@@ -159,6 +191,39 @@ def chat(request: ChatRequest) -> ChatResponse:
         recommended_questions=generation["recommended_questions"],
         used_files=used_files,
         knowledge_mode=normalized_mode,
+    )
+
+
+@app.get("/api/admin/chat-logs", response_model=ChatLogListResponse)
+def admin_chat_logs(
+    limit: int = Query(
+        default=CHAT_LOG_LIST_DEFAULT_LIMIT,
+        ge=1,
+        le=CHAT_LOG_LIST_MAX_LIMIT,
+    ),
+    offset: int = Query(default=0, ge=0),
+    can_answer: bool | None = None,
+    knowledge_mode: str | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    x_admin_key: str | None = Header(default=None),
+) -> ChatLogListResponse:
+    """認証付きでチャットログ一覧を返すAPI"""
+    _require_admin_api_key(x_admin_key)
+    try:
+        total, items = list_chat_logs(
+            limit=limit,
+            offset=offset,
+            can_answer=can_answer,
+            knowledge_mode=knowledge_mode,
+            query_text=q,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return ChatLogListResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=items,
     )
 
 

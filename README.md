@@ -1,156 +1,321 @@
 # Chubu Commons AI
 
-Chubu Commons AIは、中部大学のコモンズやキャンパス情報を案内するチャットボットです。エージェント名は「コモ」です。FastAPIバックエンドがAPIとフロントエンドを同じ `8000` 番ポートで配信します。検索は常に `hybrid`（PostgreSQL + ベクトル検索）を使います。
+Chubu Commons AI は、中部大学のコモンズ、施設、学食、学部学科、大学案内情報を対話形式で案内する Web アプリです。エージェント名は「コモ」です。
 
-このREADMEは、リポジトリ全体の最短起動手順をまとめています。`src` 配下の詳しい構成や運用は [src/README.md](src/README.md) を参照してください。
+このリポジトリでは、FastAPI バックエンドと静的フロントエンドを同じ `8000` 番ポートで配信します。知識検索は常に `search + hybrid` で動作し、`all` モードには戻りません。
 
-## 推奨起動方法
+詳しい実装説明は [src/README.md](src/README.md) を参照してください。この README は、起動、設定、確認、運用に必要な内容だけをまとめています。
 
-Dockerで起動する方法を推奨します。Windows / macOS / Linuxで手順をそろえやすく、Python環境をPCに直接作らなくて済みます。
+## 構成
 
-必要なもの:
+```text
+Browser
+  -> http://<server>:8000
+  -> FastAPI
+      -> /api/chat
+      -> /api/health
+      -> /api/admin/chat-logs
+      -> Gemini API
+      -> PostgreSQL + pgvector   検索用
+      -> PostgreSQL / Supabase   chat_logs 保存用
+      -> src/backend/knowledge/*.md
+```
+
+ポイント:
+
+- フロントエンドは同一オリジンの `/api/chat` を呼びます
+- 検索は常に PostgreSQL + pgvector の hybrid 検索です
+- 会話ログ `chat_logs` は PostgreSQL に保存します
+- `chat_logs` の保存先は、ローカル PostgreSQL でも Supabase でも構いません
+
+## 主な機能
+
+- 中部大学向け FAQ / 案内チャット
+- Markdown ナレッジを使った hybrid 検索
+- Gemini による回答生成
+- おすすめ質問 3 件の自動提案
+- 認証付きログ閲覧 API
+
+## 必要なもの
 
 - Docker Desktop
-- Gemini APIキー
+- Gemini API キー
+- 任意: Supabase の PostgreSQL 接続情報
 
-## 初回セットアップ
+## 最短起動
 
-リポジトリ直下で実行します。
+1. `src/.env` を作る
 
 ```bash
 cp src/.env.example src/.env
 ```
 
-Windows PowerShellの場合:
+Windows PowerShell:
 
 ```powershell
 Copy-Item src\.env.example src\.env
 ```
 
-作成した `src/.env` を開き、`API_KEY` を実際のGemini APIキーに置き換えます。
+2. `src/.env` に最低限これを入れる
 
-```text
+```env
 API_KEY=AIzaから始まる実際のGemini APIキー
-GEMINI_MODEL=gemini-2.5-flash
-KNOWLEDGE_MODE_DEFAULT=search
-SEARCH_BACKEND_DEFAULT=hybrid
-HOME_RETURN_SECONDS=30
-CHAT_HISTORY_MAX_EXCHANGES=5
-CHAT_HISTORY_WINDOW_MINUTES=2
-CHAT_LOG_ENABLED=true
-CHAT_LOG_DB_PATH=data/chu_ai.sqlite3
 POSTGRES_DSN=postgresql://chu_ai:chu_ai@postgres:5432/chu_ai
-HYBRID_EMBEDDING_MODEL=gemini-embedding-001
-HYBRID_EMBEDDING_DIM=768
+CHAT_LOG_ADMIN_API_KEY=十分長いランダム文字列
 ```
 
-## 起動
+3. 起動する
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
-起動後、同じPCのブラウザで開きます。
-
-```text
-http://127.0.0.1:8000
-```
-
-`SEARCH_BACKEND_DEFAULT=hybrid` の場合は、初回だけインデックス作成を実行します。
+4. 初回だけ検索インデックスを作る
 
 ```bash
 docker compose exec chu-ai python rebuild_hybrid_index.py
 ```
 
-2回目以降、コードや依存関係を変更していない場合は次で起動できます。
+5. 開く
 
-```bash
-docker compose up
+```text
+http://127.0.0.1:8000
 ```
 
-停止する場合:
+ログイン用パスワード:
+
+```text
+commons
+```
+
+停止:
 
 ```bash
 docker compose down
 ```
 
+## `.env` のおすすめ設定
+
+### 1. ローカル PostgreSQL に全部保存する
+
+```env
+API_KEY=AIzaから始まる実際のGemini APIキー
+GEMINI_MODEL=gemini-2.5-flash
+
+KNOWLEDGE_MODE_DEFAULT=search
+SEARCH_BACKEND_DEFAULT=hybrid
+
+HOME_RETURN_SECONDS=180
+CHAT_HISTORY_MAX_EXCHANGES=5
+CHAT_HISTORY_WINDOW_MINUTES=2
+
+CHAT_LOG_ENABLED=true
+CHAT_LOG_POSTGRES_DSN=
+CHAT_LOG_ADMIN_API_KEY=十分長いランダム文字列
+CHAT_LOG_LIST_DEFAULT_LIMIT=50
+CHAT_LOG_LIST_MAX_LIMIT=200
+
+POSTGRES_DSN=postgresql://chu_ai:chu_ai@postgres:5432/chu_ai
+POSTGRES_CONNECT_TIMEOUT_SECONDS=5
+
+HYBRID_AUTO_INIT_DB=true
+HYBRID_EMBEDDING_MODEL=gemini-embedding-001
+HYBRID_EMBEDDING_DIM=768
+HYBRID_CHUNK_SIZE=500
+HYBRID_CHUNK_OVERLAP=80
+HYBRID_KEYWORD_TOP_K=20
+HYBRID_VECTOR_TOP_K=20
+HYBRID_FINAL_TOP_K=6
+HYBRID_RRF_K=60
+```
+
+`CHAT_LOG_POSTGRES_DSN` を空にすると、`POSTGRES_DSN` をそのまま使います。
+
+### 2. 検索はローカル PostgreSQL、`chat_logs` だけ Supabase に保存する
+
+```env
+API_KEY=AIzaから始まる実際のGemini APIキー
+GEMINI_MODEL=gemini-2.5-flash
+
+KNOWLEDGE_MODE_DEFAULT=search
+SEARCH_BACKEND_DEFAULT=hybrid
+
+HOME_RETURN_SECONDS=180
+CHAT_HISTORY_MAX_EXCHANGES=5
+CHAT_HISTORY_WINDOW_MINUTES=2
+
+CHAT_LOG_ENABLED=true
+CHAT_LOG_POSTGRES_DSN=postgresql://postgres.<project-ref>:<password>@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
+CHAT_LOG_ADMIN_API_KEY=十分長いランダム文字列
+CHAT_LOG_LIST_DEFAULT_LIMIT=50
+CHAT_LOG_LIST_MAX_LIMIT=200
+
+POSTGRES_DSN=postgresql://chu_ai:chu_ai@postgres:5432/chu_ai
+POSTGRES_CONNECT_TIMEOUT_SECONDS=5
+
+HYBRID_AUTO_INIT_DB=true
+HYBRID_EMBEDDING_MODEL=gemini-embedding-001
+HYBRID_EMBEDDING_DIM=768
+HYBRID_CHUNK_SIZE=500
+HYBRID_CHUNK_OVERLAP=80
+HYBRID_KEYWORD_TOP_K=20
+HYBRID_VECTOR_TOP_K=20
+HYBRID_FINAL_TOP_K=6
+HYBRID_RRF_K=60
+```
+
+Supabase では `5432` の session-mode pooler を使ってください。`6543` の transaction-mode はこの構成では使いません。
+
+## 動作確認
+
+### 起動確認
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+見るポイント:
+
+- `status: ok`
+- `knowledge_mode_default: search`
+- `search_backend_default: hybrid`
+- `chat_log_storage: postgres`
+- `chat_log_db_configured: true`
+
+### チャット送信確認
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"text":"中部大学の学食について教えて","knowledge_mode":"all"}'
+```
+
+見るポイント:
+
+- レスポンスの `knowledge_mode` が `search`
+- バックエンドログに `Knowledge selected: mode=hybrid`
+
+### ログ保存確認
+
+```bash
+curl http://127.0.0.1:8000/api/admin/chat-logs \
+  -H "X-Admin-Key: 設定した管理キー"
+```
+
+見るポイント:
+
+- `items` に質問と回答が入っている
+- `used_files` に参照した知識ファイルが入っている
+
+## API
+
+### `GET /api/health`
+
+バックエンド起動確認用です。
+
+### `POST /api/chat`
+
+フロントエンドからの質問送信用です。
+
+リクエスト例:
+
+```json
+{
+  "text": "中部大学の学食について教えて",
+  "knowledge_mode": "all"
+}
+```
+
+補足:
+
+- `knowledge_mode` は何を送っても、実行時は常に `search`
+- 検索方式も常に `hybrid`
+
+### `GET /api/admin/chat-logs`
+
+認証付きのチャットログ一覧 API です。
+
+ヘッダ:
+
+```text
+X-Admin-Key: 設定した管理キー
+```
+
+主なクエリ:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `limit` | int | 取得件数 |
+| `offset` | int | 開始位置 |
+| `can_answer` | bool | 回答可否で絞り込み |
+| `knowledge_mode` | string | 例: `search` |
+| `q` | string | 質問文・回答文の部分一致検索 |
+
+## 知識を追加・更新する時
+
+1. `src/backend/knowledge/` に Markdown を追加または更新する
+2. インデックスを再構築する
+
+```bash
+docker compose exec chu-ai python rebuild_hybrid_index.py
+```
+
+これをしない限り、新しい知識は検索対象に入りません。
+
+## 運用メモ
+
+- `Enter` で送信されます
+- 会話履歴はブラウザ側で保持し、送信時に質問文へ同梱します
+- `chat_logs` には質問文、回答文、回答可否、使用知識、会話履歴、おすすめ質問が保存されます
+- `CHAT_LOG_ADMIN_API_KEY` が空だとログ閲覧 API は無効です
+
 ## 別端末から開く
 
-同じネットワーク内のスマホ、タブレット、BIG PADなどから開く場合は、Dockerを起動しているPCのIPアドレスを使います。
+同じネットワーク内の端末からは、起動PCの IP アドレスで開きます。
 
 ```text
 http://<起動PCのIPアドレス>:8000
 ```
 
-注意点:
+注意:
 
-- `https://` ではなく `http://` で開く
-- `127.0.0.1` は起動PC自身を指すため、別端末では使わない
-- Windowsで開けない場合は、Windows Defender FirewallでTCP `8000` の受信を許可する
+- `https://` ではなく `http://`
+- `127.0.0.1` は別端末からは使えない
+- Windows では TCP `8000` をファイアウォールで許可する
 
-## 主な設定
-
-設定は `src/.env` で管理します。
-
-| 項目 | 役割 | 例 |
-| --- | --- | --- |
-| `API_KEY` | Gemini APIキー | `AIza...` |
-| `GEMINI_MODEL` | 使用するGeminiモデル | `gemini-2.5-flash` |
-| `KNOWLEDGE_MODE_DEFAULT` | ナレッジ投入方法。バックエンドでは常に `search` に強制 | `search` |
-| `SEARCH_BACKEND_DEFAULT` | 検索方式。バックエンドでは常に `hybrid` に強制 | `hybrid` |
-| `HOME_RETURN_SECONDS` | チャット画面からホームへ戻る秒数 | `30` |
-| `CHAT_HISTORY_MAX_EXCHANGES` | Geminiへ渡す過去会話の最大往復数 | `5` |
-| `CHAT_HISTORY_WINDOW_MINUTES` | Geminiへ渡す過去会話の保持分数 | `2` |
-| `CHAT_LOG_ENABLED` | 質問・回答ログをSQLiteへ保存するか | `true` |
-| `CHAT_LOG_DB_PATH` | SQLiteログDBの保存先 | `data/chu_ai.sqlite3` |
-| `POSTGRES_DSN` | hybrid検索用PostgreSQL接続文字列 | `postgresql://chu_ai:chu_ai@postgres:5432/chu_ai` |
-| `HYBRID_EMBEDDING_MODEL` | 埋め込みモデル | `gemini-embedding-001` |
-| `HYBRID_EMBEDDING_DIM` | 埋め込みベクトル次元 | `768` |
-
-フロントエンドからの通常送信は `knowledge_mode: "search"` を指定します。APIを直接叩いて `all` を送っても、バックエンド側で `search + hybrid` に強制されます。
-
-会話履歴はブラウザ上で保持し、API送信時に質問へ同梱します。`CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` にすると、過去履歴をGeminiへ渡しません。
-
-回答ログは `data/chu_ai.sqlite3` に保存します。DBファイルとテーブルはバックエンド起動時または初回保存時に自動作成します。保存内容は、質問時刻、質問文、回答、回答可否、参照した知識ファイル、使用した過去会話、おすすめ質問です。
-
-## 公開リポジトリでの注意
+## セキュリティ
 
 公開してよいもの:
 
 - ソースコード
 - `src/.env.example`
-- Docker設定ファイル
+- `Dockerfile`
+- `docker-compose.yml`
 - README
 
 公開してはいけないもの:
 
 - `src/.env`
-- APIキー
-- `src/backend/.venv/`
-- `data/`
-- キャッシュ、ログ、ローカルDB
+- API キー
+- Supabase パスワード
+- `CHAT_LOG_ADMIN_API_KEY`
+- ローカル DB やログ
 
-`.gitignore` と `.dockerignore` で秘密情報やローカル生成物は除外しています。
+`docker compose config` の出力には秘密情報が含まれる可能性があります。共有しないでください。
 
-`docker compose config` は `src/.env` の値を展開して表示します。APIキーが含まれる可能性があるため、その出力は共有しないでください。
-
-## ディレクトリ構成
+## ディレクトリ
 
 ```text
 CHU-AI/
   Dockerfile
   docker-compose.yml
   README.md
-  data/
-    chu_ai.sqlite3      # 実行時に作成。git管理外
   src/
-    README.md
     .env.example
-    setup.sh
-    start_backend.sh
-    start_frontend.sh
+    README.md
     backend/
       main.py
+      rebuild_hybrid_index.py
       requirements.txt
       chu_ai/
       knowledge/
@@ -161,13 +326,13 @@ CHU-AI/
   testing/
 ```
 
-## Dockerなしで起動する場合
+## ローカル Python で起動する場合
 
-macOS / LinuxでPython 3.11が入っている場合は、ローカルスクリプトでも起動できます。
+Docker を使わないなら:
 
 ```bash
 ./src/setup.sh
 ./src/start_backend.sh
 ```
 
-通常はDocker起動を使ってください。ローカル起動の詳細は [src/README.md](src/README.md) にまとめています。
+ただし通常は Docker 起動を使ってください。
