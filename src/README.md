@@ -219,6 +219,20 @@ commons
 | `error_type` | APIエラーなどの種別 |
 | `error_message` | APIエラーなどの詳細 |
 
+## フィードバックDB
+
+回答バブルの下に、`役に立った` / `足りなかった` のフィードバックUIを出します。送信された内容は PostgreSQL の `feedback_logs` テーブルへ保存します。
+
+保存する主な項目:
+
+| 項目 | 内容 |
+| --- | --- |
+| `chat_log_id` | どの回答に対する感想か |
+| `helpful` | 役に立ったかどうか |
+| `feedback_type` | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `other` |
+| `comment` | 自由記述 |
+| `created_at` | 登録時刻 |
+
 ## API
 
 ### 起動確認
@@ -270,6 +284,24 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | `recommended_questions` | string[] | 次におすすめする質問。回答可なら入力欄上の既存3ボタンへ反映する |
 | `used_files` | string[] | 回答生成に使ったナレッジファイル |
 | `knowledge_mode` | string | 実際に使ったナレッジモード |
+| `chat_log_id` | int/null | 保存された `chat_logs.id` |
+
+### フィードバック送信
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"chat_log_id":1,"helpful":false,"feedback_type":"knowledge_missing","comment":"知りたい情報が足りませんでした"}'
+```
+
+リクエスト:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `chat_log_id` | int | 対象の回答ログID |
+| `helpful` | bool | 役に立ったかどうか |
+| `feedback_type` | string | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `other` |
+| `comment` | string/null | 自由記述。500文字まで |
 
 ### 管理用ログ一覧
 
@@ -289,6 +321,23 @@ curl http://127.0.0.1:8000/api/admin/chat-logs \
 | `can_answer` | bool | 回答可否で絞り込み |
 | `knowledge_mode` | string | 例: `search` |
 | `q` | string | 質問文・回答文の部分一致検索 |
+
+### 管理用フィードバック一覧
+
+```bash
+curl http://127.0.0.1:8000/api/admin/feedback-logs \
+  -H "X-Admin-Key: change-this-admin-key"
+```
+
+主なクエリ:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `limit` | int | 取得件数 |
+| `offset` | int | 取得開始位置 |
+| `helpful` | bool | 役に立ったかどうかで絞り込み |
+| `feedback_type` | string | 例: `knowledge_missing` |
+| `q` | string | 質問文・回答文・コメントの部分一致検索 |
 
 ## ナレッジモード
 

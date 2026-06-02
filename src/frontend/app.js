@@ -6,6 +6,7 @@ const API_URL = (() => {
   return "/api/chat";
 })();
 const HEALTH_URL = API_URL.replace(/\/chat$/, "/health");
+const FEEDBACK_URL = API_URL.replace(/\/chat$/, "/feedback");
 const DEFAULT_HOME_RETURN_SECONDS = 30;
 const DEFAULT_HISTORY_MAX_EXCHANGES = 5;
 const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
@@ -13,6 +14,43 @@ const TYPING_INTERVAL_MS = 18;
 const VALID_PASSWORDS = new Set(["commons", "commons."]);
 const BOT_NAME = "コモ";
 const INITIAL_BOT_MESSAGE = "やっほー！コモだよ。質問を入力してね。";
+const INITIAL_QUICK_QUESTION_POOL = [
+  "中部大学とは？",
+  "建学の精神は？",
+  "基本理念を教えて",
+  "学生数はどれくらい？",
+  "どんな学部がある？",
+  "工学部には何学科ある？",
+  "理工学部について教えて",
+  "応用生物学部の特徴は？",
+  "生命健康科学部について知りたい",
+  "教育学部では何を学べる？",
+  "国際交流制度はある？",
+  "PASEOとは？",
+  "留学制度について教えて",
+  "キャリア支援は何がある？",
+  "C-NETとは？",
+  "Web面接用ブースはある？",
+  "ラーニング・コモンズとは？",
+  "スチューデント・コモンズとは？",
+  "コモンズのルールは？",
+  "不言実行館には何がある？",
+  "学食の種類を教えて",
+  "人気の食堂は？",
+  "スタバはどこ？",
+  "パン屋はある？",
+  "クラブ・サークルについて教えて",
+  "注目のクラブは？",
+  "国際学科と英語英米文化学科の違いは？",
+  "工学部と理工学部の違いは？",
+  "教員免許は取れる？",
+  "国家試験が必要な学科は？",
+  "大学院はある？",
+  "入試情報を知りたい",
+  "奨学金について教えて",
+  "アクセスを教えて",
+  "オープンキャンパスはいつ？",
+];
 
 const screenPassword = document.getElementById("screen-password");
 const screenTitle = document.getElementById("screen-title");
@@ -30,7 +68,6 @@ const messages = document.getElementById("messages");
 const messageList = document.getElementById("message-list") || messages;
 const statusText = document.getElementById("status");
 const quickButtons = document.querySelectorAll(".quick-button");
-const initialQuickQuestions = Array.from(quickButtons).map((button) => button.textContent.trim());
 const exchangeHistory = [];
 
 let isInputLocked = false;
@@ -43,6 +80,14 @@ let homeReturnDeadlineTs = 0;
 let lastActivityResetAt = 0;
 let chatStateVersion = 0;
 let lastEnterSubmitAt = 0;
+let currentInitialQuickQuestions = [];
+
+const FEEDBACK_OPTIONS = [
+  { value: "knowledge_missing", label: "知識がない" },
+  { value: "wrong_answer", label: "答えが違う" },
+  { value: "hard_to_understand", label: "わかりにくい" },
+  { value: "other", label: "その他" },
+];
 
 function showScreen(screenElement) {
   [screenPassword, screenTitle, chatApp].forEach((element) => {
@@ -178,7 +223,7 @@ function setStatus(text, className) {
   }
 }
 
-function createMessageElement(name, type) {
+function createMessageElements(name, type) {
   const message = document.createElement("article");
   message.className = `message ${type}`;
 
@@ -192,7 +237,11 @@ function createMessageElement(name, type) {
   message.append(messageName, messageText);
   messageList.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
-  return messageText;
+  return { message, messageText };
+}
+
+function createMessageElement(name, type) {
+  return createMessageElements(name, type).messageText;
 }
 
 function addMessage(name, text, type) {
@@ -246,8 +295,40 @@ function setQuickQuestionLabels(labels) {
   });
 }
 
+function shuffleArray(items) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function pickRandomInitialQuickQuestions(count, previous = []) {
+  if (count <= 0) {
+    return [];
+  }
+
+  if (INITIAL_QUICK_QUESTION_POOL.length <= count) {
+    return INITIAL_QUICK_QUESTION_POOL.slice(0, count);
+  }
+
+  let picked = shuffleArray(INITIAL_QUICK_QUESTION_POOL).slice(0, count);
+  const previousSignature = previous.join("||");
+  let retryCount = 0;
+  while (picked.join("||") === previousSignature && retryCount < 5) {
+    picked = shuffleArray(INITIAL_QUICK_QUESTION_POOL).slice(0, count);
+    retryCount += 1;
+  }
+  return picked;
+}
+
 function resetQuickQuestions() {
-  setQuickQuestionLabels(initialQuickQuestions);
+  currentInitialQuickQuestions = pickRandomInitialQuickQuestions(
+    quickButtons.length,
+    currentInitialQuickQuestions,
+  );
+  setQuickQuestionLabels(currentInitialQuickQuestions);
 }
 
 function renderRecommendedQuestions(questions, canAnswer) {
@@ -328,18 +409,191 @@ function resetChatState() {
 }
 
 async function typeMessage(name, text, type, shouldContinue = () => true) {
-  const messageText = createMessageElement(name, type);
+  const { message, messageText } = createMessageElements(name, type);
   let current = "";
   for (const char of text) {
     if (!shouldContinue()) {
-      return false;
+      return { completed: false, message };
     }
     current += char;
     messageText.textContent = current;
     messages.scrollTop = messages.scrollHeight;
     await sleep(TYPING_INTERVAL_MS);
   }
-  return true;
+  return { completed: true, message };
+}
+
+async function postFeedback(payload) {
+  const response = await fetch(FEEDBACK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`feedback error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function renderFeedbackPrompt(message, payload) {
+  if (!message || !payload?.chatLogId) {
+    return;
+  }
+
+  const scrollFeedbackIntoView = () => {
+    window.requestAnimationFrame(() => {
+      if (message.scrollIntoView) {
+        message.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
+      }
+      messages.scrollTop = messages.scrollHeight;
+    });
+  };
+
+  const container = document.createElement("section");
+  container.className = "message-feedback";
+
+  const title = document.createElement("p");
+  title.className = "message-feedback-title";
+  title.textContent = "この回答はどうだった？";
+
+  const actionRow = document.createElement("div");
+  actionRow.className = "message-feedback-actions";
+
+  const helpfulButton = document.createElement("button");
+  helpfulButton.type = "button";
+  helpfulButton.className = "feedback-chip feedback-chip-positive";
+  helpfulButton.textContent = "役に立った";
+
+  const notHelpfulButton = document.createElement("button");
+  notHelpfulButton.type = "button";
+  notHelpfulButton.className = "feedback-chip feedback-chip-negative";
+  notHelpfulButton.textContent = "足りなかった";
+
+  actionRow.append(helpfulButton, notHelpfulButton);
+
+  const detailPanel = document.createElement("div");
+  detailPanel.className = "message-feedback-detail hidden";
+
+  const detailLabel = document.createElement("p");
+  detailLabel.className = "message-feedback-detail-label";
+  detailLabel.textContent = "どこが足りなかった？";
+
+  const optionRow = document.createElement("div");
+  optionRow.className = "message-feedback-options";
+
+  let selectedType = "knowledge_missing";
+  const optionButtons = FEEDBACK_OPTIONS.map((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "feedback-chip";
+    button.dataset.feedbackType = option.value;
+    button.textContent = option.label;
+    if (option.value === selectedType) {
+      button.classList.add("selected");
+    }
+    button.addEventListener("click", () => {
+      selectedType = option.value;
+      optionButtons.forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+    optionRow.appendChild(button);
+    return button;
+  });
+
+  const commentInput = document.createElement("textarea");
+  commentInput.className = "feedback-comment";
+  commentInput.rows = 3;
+  commentInput.maxLength = 500;
+  commentInput.placeholder = "知りたかったこと、足りなかった点があれば教えてね";
+
+  const submitButton = document.createElement("button");
+  submitButton.type = "button";
+  submitButton.className = "feedback-submit";
+  submitButton.textContent = "送信";
+
+  const status = document.createElement("p");
+  status.className = "message-feedback-status";
+
+  detailPanel.append(detailLabel, optionRow, commentInput, submitButton, status);
+  container.append(title, actionRow, detailPanel);
+  message.appendChild(container);
+
+  const setFeedbackDisabled = (disabled) => {
+    helpfulButton.disabled = disabled;
+    notHelpfulButton.disabled = disabled;
+    submitButton.disabled = disabled;
+    optionButtons.forEach((button) => {
+      button.disabled = disabled;
+    });
+    commentInput.disabled = disabled;
+  };
+
+  const markFeedbackDone = (text) => {
+    actionRow.remove();
+    detailPanel.remove();
+    const done = document.createElement("p");
+    done.className = "message-feedback-status done";
+    done.textContent = text;
+    container.appendChild(done);
+    scrollFeedbackIntoView();
+  };
+
+  const submitFeedback = async ({ helpful, feedbackType, comment }) => {
+    setFeedbackDisabled(true);
+    status.textContent = "送信中...";
+    status.classList.remove("error");
+
+    try {
+      await postFeedback({
+        chat_log_id: payload.chatLogId,
+        helpful,
+        feedback_type: feedbackType,
+        comment,
+      });
+      markFeedbackDone(
+        helpful
+          ? "フィードバックありがとう。"
+          : "フィードバックありがとう。改善に活かします。",
+      );
+    } catch (error) {
+      status.textContent = "送信できなかったよ。時間をおいてもう一度試してね。";
+      status.classList.add("error");
+      setFeedbackDisabled(false);
+    }
+  };
+
+  helpfulButton.addEventListener("click", () => {
+    submitFeedback({
+      helpful: true,
+      feedbackType: "helpful",
+      comment: "",
+    });
+  });
+
+  notHelpfulButton.addEventListener("click", () => {
+    detailPanel.classList.remove("hidden");
+    status.textContent = "";
+    commentInput.focus();
+    scrollFeedbackIntoView();
+  });
+
+  submitButton.addEventListener("click", () => {
+    submitFeedback({
+      helpful: false,
+      feedbackType: selectedType,
+      comment: commentInput.value.trim(),
+    });
+  });
+
+  scrollFeedbackIntoView();
 }
 
 function buildHistoryPrompt(currentQuestion) {
@@ -468,12 +722,20 @@ async function sendQuestion(text) {
     }
     removeThinkingMessage(thinkingMessage);
     setStatus("表示中", "loading");
-    const didComplete = await typeMessage(BOT_NAME, data.answer, "bot", () => currentStateVersion === chatStateVersion);
-    if (!didComplete || currentStateVersion !== chatStateVersion) {
+    const typeResult = await typeMessage(
+      BOT_NAME,
+      data.answer,
+      "bot",
+      () => currentStateVersion === chatStateVersion,
+    );
+    if (!typeResult.completed || currentStateVersion !== chatStateVersion) {
       return;
     }
     pushExchange(requestText, data.answer);
     renderRecommendedQuestions(data.recommended_questions, data.can_answer);
+    renderFeedbackPrompt(typeResult.message, {
+      chatLogId: data.chat_log_id,
+    });
     setStatus("");
     noteUserActivity(true);
   } catch (error) {
@@ -600,6 +862,7 @@ function bindEvents() {
 
 async function initialize() {
   await loadRuntimeSettings();
+  resetQuickQuestions();
   bindEvents();
   showScreen(screenPassword);
   if (passwordInput) {

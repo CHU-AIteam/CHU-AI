@@ -191,20 +191,20 @@ def save_chat_log(
     request_text: str,
     error_type: str | None = None,
     error_message: str | None = None,
-) -> None:
+) -> int | None:
     """チャット1件分をPostgreSQLへ保存する関数"""
     if not CHAT_LOG_ENABLED:
-        return
+        return None
 
     if not has_chat_log_database_config():
         print("Chat log save skipped: CHAT_LOG_POSTGRES_DSN is not configured.", file=sys.stderr)
-        return
+        return None
 
     try:
         from psycopg.types.json import Jsonb
     except ImportError as error:
         print(f"Chat log save failed: {error}", file=sys.stderr)
-        return
+        return None
 
     try:
         initialize_chat_log_db()
@@ -227,6 +227,7 @@ def save_chat_log(
                         error_message
                     )
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
                     """,
                     (
                         asked_at_value,
@@ -242,8 +243,12 @@ def save_chat_log(
                         error_message,
                     ),
                 )
+                row = cursor.fetchone()
+                if row:
+                    return int(row[0])
     except Exception as error:
         print(f"Chat log save failed: {error}", file=sys.stderr)
+    return None
 
 
 def list_chat_logs(
