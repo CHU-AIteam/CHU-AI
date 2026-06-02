@@ -14,6 +14,43 @@ const TYPING_INTERVAL_MS = 18;
 const VALID_PASSWORDS = new Set(["commons", "commons."]);
 const BOT_NAME = "コモ";
 const INITIAL_BOT_MESSAGE = "やっほー！コモだよ。質問を入力してね。";
+const INITIAL_QUICK_QUESTION_POOL = [
+  "中部大学とは？",
+  "建学の精神は？",
+  "基本理念を教えて",
+  "学生数はどれくらい？",
+  "どんな学部がある？",
+  "工学部には何学科ある？",
+  "理工学部について教えて",
+  "応用生物学部の特徴は？",
+  "生命健康科学部について知りたい",
+  "教育学部では何を学べる？",
+  "国際交流制度はある？",
+  "PASEOとは？",
+  "留学制度について教えて",
+  "キャリア支援は何がある？",
+  "C-NETとは？",
+  "Web面接用ブースはある？",
+  "ラーニング・コモンズとは？",
+  "スチューデント・コモンズとは？",
+  "コモンズのルールは？",
+  "不言実行館には何がある？",
+  "学食の種類を教えて",
+  "人気の食堂は？",
+  "スタバはどこ？",
+  "パン屋はある？",
+  "クラブ・サークルについて教えて",
+  "注目のクラブは？",
+  "国際学科と英語英米文化学科の違いは？",
+  "工学部と理工学部の違いは？",
+  "教員免許は取れる？",
+  "国家試験が必要な学科は？",
+  "大学院はある？",
+  "入試情報を知りたい",
+  "奨学金について教えて",
+  "アクセスを教えて",
+  "オープンキャンパスはいつ？",
+];
 
 const screenPassword = document.getElementById("screen-password");
 const screenTitle = document.getElementById("screen-title");
@@ -31,7 +68,6 @@ const messages = document.getElementById("messages");
 const messageList = document.getElementById("message-list") || messages;
 const statusText = document.getElementById("status");
 const quickButtons = document.querySelectorAll(".quick-button");
-const initialQuickQuestions = Array.from(quickButtons).map((button) => button.textContent.trim());
 const exchangeHistory = [];
 
 let isInputLocked = false;
@@ -44,6 +80,7 @@ let homeReturnDeadlineTs = 0;
 let lastActivityResetAt = 0;
 let chatStateVersion = 0;
 let lastEnterSubmitAt = 0;
+let currentInitialQuickQuestions = [];
 
 const FEEDBACK_OPTIONS = [
   { value: "knowledge_missing", label: "知識がない" },
@@ -258,8 +295,40 @@ function setQuickQuestionLabels(labels) {
   });
 }
 
+function shuffleArray(items) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function pickRandomInitialQuickQuestions(count, previous = []) {
+  if (count <= 0) {
+    return [];
+  }
+
+  if (INITIAL_QUICK_QUESTION_POOL.length <= count) {
+    return INITIAL_QUICK_QUESTION_POOL.slice(0, count);
+  }
+
+  let picked = shuffleArray(INITIAL_QUICK_QUESTION_POOL).slice(0, count);
+  const previousSignature = previous.join("||");
+  let retryCount = 0;
+  while (picked.join("||") === previousSignature && retryCount < 5) {
+    picked = shuffleArray(INITIAL_QUICK_QUESTION_POOL).slice(0, count);
+    retryCount += 1;
+  }
+  return picked;
+}
+
 function resetQuickQuestions() {
-  setQuickQuestionLabels(initialQuickQuestions);
+  currentInitialQuickQuestions = pickRandomInitialQuickQuestions(
+    quickButtons.length,
+    currentInitialQuickQuestions,
+  );
+  setQuickQuestionLabels(currentInitialQuickQuestions);
 }
 
 function renderRecommendedQuestions(questions, canAnswer) {
@@ -793,6 +862,7 @@ function bindEvents() {
 
 async function initialize() {
   await loadRuntimeSettings();
+  resetQuickQuestions();
   bindEvents();
   showScreen(screenPassword);
   if (passwordInput) {
