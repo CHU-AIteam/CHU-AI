@@ -23,7 +23,14 @@ from chu_ai.config import (
     HOME_RETURN_SECONDS,
     HYBRID_AUTO_INIT_DB,
 )
-from chu_ai.schemas import ChatLogListResponse, ChatRequest, ChatResponse
+from chu_ai.schemas import (
+    ChatLogListResponse,
+    ChatRequest,
+    ChatResponse,
+    FeedbackLogListResponse,
+    FeedbackRequest,
+    FeedbackResponse,
+)
 from chu_ai.services.chat_log_service import (
     compact_log_text,
     current_asked_at,
@@ -37,6 +44,12 @@ from chu_ai.services.chat_log_service import (
     save_chat_log,
 )
 from chu_ai.services.chat_service import FORCED_KNOWLEDGE_MODE, process_user_request
+from chu_ai.services.feedback_service import (
+    initialize_feedback_db,
+    list_feedback_logs,
+    normalize_feedback_type,
+    save_feedback,
+)
 from chu_ai.services.generation_service import normalize_recommended_questions
 from chu_ai.services.hybrid_search_service import initialize_hybrid_search_runtime
 from chu_ai.services.hybrid_store_service import has_hybrid_database_config
@@ -86,6 +99,7 @@ def startup_log() -> None:
     if CHAT_LOG_ENABLED:
         try:
             initialize_chat_log_db()
+            initialize_feedback_db()
         except Exception as error:
             chat_log_init_error = str(error)
 
@@ -164,7 +178,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         request_text, request.knowledge_mode
     )
 
-    save_chat_log(
+    chat_log_id = save_chat_log(
         asked_at=asked_at,
         question=current_question,
         answer=generation["answer"],
@@ -191,7 +205,29 @@ def chat(request: ChatRequest) -> ChatResponse:
         recommended_questions=generation["recommended_questions"],
         used_files=used_files,
         knowledge_mode=normalized_mode,
+        chat_log_id=chat_log_id,
     )
+
+
+@app.post("/api/feedback", response_model=FeedbackResponse)
+def feedback(request: FeedbackRequest) -> FeedbackResponse:
+    """回答1件に対する感想・知識不足フィードバックを保存するAPI"""
+    normalized_type = normalize_feedback_type(request.helpful, request.feedback_type)
+    try:
+        feedback_id = save_feedback(
+            chat_log_id=request.chat_log_id,
+            helpful=request.helpful,
+            feedback_type=normalized_type,
+            comment=request.comment,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"feedback save failed: {error}") from error
+
+    return FeedbackResponse(feedback_id=feedback_id)
 
 
 @app.get("/api/admin/chat-logs", response_model=ChatLogListResponse)
@@ -220,6 +256,40 @@ def admin_chat_logs(
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return ChatLogListResponse(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=items,
+    )
+
+
+@app.get("/api/admin/feedback-logs", response_model=FeedbackLogListResponse)
+def admin_feedback_logs(
+    limit: int = Query(
+        default=CHAT_LOG_LIST_DEFAULT_LIMIT,
+        ge=1,
+        le=CHAT_LOG_LIST_MAX_LIMIT,
+    ),
+    offset: int = Query(default=0, ge=0),
+    helpful: bool | None = None,
+    feedback_type: str | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    x_admin_key: str | None = Header(default=None),
+) -> FeedbackLogListResponse:
+    """認証付きでフィードバック一覧を返すAPI"""
+    _require_admin_api_key(x_admin_key)
+    try:
+        total, items = list_feedback_logs(
+            limit=limit,
+            offset=offset,
+            helpful=helpful,
+            feedback_type=feedback_type,
+            query_text=q,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    return FeedbackLogListResponse(
         total=total,
         limit=limit,
         offset=offset,

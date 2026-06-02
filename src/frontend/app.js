@@ -6,6 +6,7 @@ const API_URL = (() => {
   return "/api/chat";
 })();
 const HEALTH_URL = API_URL.replace(/\/chat$/, "/health");
+const FEEDBACK_URL = API_URL.replace(/\/chat$/, "/feedback");
 const DEFAULT_HOME_RETURN_SECONDS = 30;
 const DEFAULT_HISTORY_MAX_EXCHANGES = 5;
 const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
@@ -43,6 +44,13 @@ let homeReturnDeadlineTs = 0;
 let lastActivityResetAt = 0;
 let chatStateVersion = 0;
 let lastEnterSubmitAt = 0;
+
+const FEEDBACK_OPTIONS = [
+  { value: "knowledge_missing", label: "知識がない" },
+  { value: "wrong_answer", label: "答えが違う" },
+  { value: "hard_to_understand", label: "わかりにくい" },
+  { value: "other", label: "その他" },
+];
 
 function showScreen(screenElement) {
   [screenPassword, screenTitle, chatApp].forEach((element) => {
@@ -178,7 +186,7 @@ function setStatus(text, className) {
   }
 }
 
-function createMessageElement(name, type) {
+function createMessageElements(name, type) {
   const message = document.createElement("article");
   message.className = `message ${type}`;
 
@@ -192,7 +200,11 @@ function createMessageElement(name, type) {
   message.append(messageName, messageText);
   messageList.appendChild(message);
   messages.scrollTop = messages.scrollHeight;
-  return messageText;
+  return { message, messageText };
+}
+
+function createMessageElement(name, type) {
+  return createMessageElements(name, type).messageText;
 }
 
 function addMessage(name, text, type) {
@@ -328,18 +340,191 @@ function resetChatState() {
 }
 
 async function typeMessage(name, text, type, shouldContinue = () => true) {
-  const messageText = createMessageElement(name, type);
+  const { message, messageText } = createMessageElements(name, type);
   let current = "";
   for (const char of text) {
     if (!shouldContinue()) {
-      return false;
+      return { completed: false, message };
     }
     current += char;
     messageText.textContent = current;
     messages.scrollTop = messages.scrollHeight;
     await sleep(TYPING_INTERVAL_MS);
   }
-  return true;
+  return { completed: true, message };
+}
+
+async function postFeedback(payload) {
+  const response = await fetch(FEEDBACK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`feedback error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function renderFeedbackPrompt(message, payload) {
+  if (!message || !payload?.chatLogId) {
+    return;
+  }
+
+  const scrollFeedbackIntoView = () => {
+    window.requestAnimationFrame(() => {
+      if (message.scrollIntoView) {
+        message.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
+      }
+      messages.scrollTop = messages.scrollHeight;
+    });
+  };
+
+  const container = document.createElement("section");
+  container.className = "message-feedback";
+
+  const title = document.createElement("p");
+  title.className = "message-feedback-title";
+  title.textContent = "この回答はどうだった？";
+
+  const actionRow = document.createElement("div");
+  actionRow.className = "message-feedback-actions";
+
+  const helpfulButton = document.createElement("button");
+  helpfulButton.type = "button";
+  helpfulButton.className = "feedback-chip feedback-chip-positive";
+  helpfulButton.textContent = "役に立った";
+
+  const notHelpfulButton = document.createElement("button");
+  notHelpfulButton.type = "button";
+  notHelpfulButton.className = "feedback-chip feedback-chip-negative";
+  notHelpfulButton.textContent = "足りなかった";
+
+  actionRow.append(helpfulButton, notHelpfulButton);
+
+  const detailPanel = document.createElement("div");
+  detailPanel.className = "message-feedback-detail hidden";
+
+  const detailLabel = document.createElement("p");
+  detailLabel.className = "message-feedback-detail-label";
+  detailLabel.textContent = "どこが足りなかった？";
+
+  const optionRow = document.createElement("div");
+  optionRow.className = "message-feedback-options";
+
+  let selectedType = "knowledge_missing";
+  const optionButtons = FEEDBACK_OPTIONS.map((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "feedback-chip";
+    button.dataset.feedbackType = option.value;
+    button.textContent = option.label;
+    if (option.value === selectedType) {
+      button.classList.add("selected");
+    }
+    button.addEventListener("click", () => {
+      selectedType = option.value;
+      optionButtons.forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+    optionRow.appendChild(button);
+    return button;
+  });
+
+  const commentInput = document.createElement("textarea");
+  commentInput.className = "feedback-comment";
+  commentInput.rows = 3;
+  commentInput.maxLength = 500;
+  commentInput.placeholder = "知りたかったこと、足りなかった点があれば教えてね";
+
+  const submitButton = document.createElement("button");
+  submitButton.type = "button";
+  submitButton.className = "feedback-submit";
+  submitButton.textContent = "送信";
+
+  const status = document.createElement("p");
+  status.className = "message-feedback-status";
+
+  detailPanel.append(detailLabel, optionRow, commentInput, submitButton, status);
+  container.append(title, actionRow, detailPanel);
+  message.appendChild(container);
+
+  const setFeedbackDisabled = (disabled) => {
+    helpfulButton.disabled = disabled;
+    notHelpfulButton.disabled = disabled;
+    submitButton.disabled = disabled;
+    optionButtons.forEach((button) => {
+      button.disabled = disabled;
+    });
+    commentInput.disabled = disabled;
+  };
+
+  const markFeedbackDone = (text) => {
+    actionRow.remove();
+    detailPanel.remove();
+    const done = document.createElement("p");
+    done.className = "message-feedback-status done";
+    done.textContent = text;
+    container.appendChild(done);
+    scrollFeedbackIntoView();
+  };
+
+  const submitFeedback = async ({ helpful, feedbackType, comment }) => {
+    setFeedbackDisabled(true);
+    status.textContent = "送信中...";
+    status.classList.remove("error");
+
+    try {
+      await postFeedback({
+        chat_log_id: payload.chatLogId,
+        helpful,
+        feedback_type: feedbackType,
+        comment,
+      });
+      markFeedbackDone(
+        helpful
+          ? "フィードバックありがとう。"
+          : "フィードバックありがとう。改善に活かします。",
+      );
+    } catch (error) {
+      status.textContent = "送信できなかったよ。時間をおいてもう一度試してね。";
+      status.classList.add("error");
+      setFeedbackDisabled(false);
+    }
+  };
+
+  helpfulButton.addEventListener("click", () => {
+    submitFeedback({
+      helpful: true,
+      feedbackType: "helpful",
+      comment: "",
+    });
+  });
+
+  notHelpfulButton.addEventListener("click", () => {
+    detailPanel.classList.remove("hidden");
+    status.textContent = "";
+    commentInput.focus();
+    scrollFeedbackIntoView();
+  });
+
+  submitButton.addEventListener("click", () => {
+    submitFeedback({
+      helpful: false,
+      feedbackType: selectedType,
+      comment: commentInput.value.trim(),
+    });
+  });
+
+  scrollFeedbackIntoView();
 }
 
 function buildHistoryPrompt(currentQuestion) {
@@ -468,12 +653,20 @@ async function sendQuestion(text) {
     }
     removeThinkingMessage(thinkingMessage);
     setStatus("表示中", "loading");
-    const didComplete = await typeMessage(BOT_NAME, data.answer, "bot", () => currentStateVersion === chatStateVersion);
-    if (!didComplete || currentStateVersion !== chatStateVersion) {
+    const typeResult = await typeMessage(
+      BOT_NAME,
+      data.answer,
+      "bot",
+      () => currentStateVersion === chatStateVersion,
+    );
+    if (!typeResult.completed || currentStateVersion !== chatStateVersion) {
       return;
     }
     pushExchange(requestText, data.answer);
     renderRecommendedQuestions(data.recommended_questions, data.can_answer);
+    renderFeedbackPrompt(typeResult.message, {
+      chatLogId: data.chat_log_id,
+    });
     setStatus("");
     noteUserActivity(true);
   } catch (error) {

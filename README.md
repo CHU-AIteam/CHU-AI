@@ -13,8 +13,10 @@ Browser
   -> http://<server>:8000
   -> FastAPI
       -> /api/chat
+      -> /api/feedback
       -> /api/health
       -> /api/admin/chat-logs
+      -> /api/admin/feedback-logs
       -> Gemini API
       -> PostgreSQL + pgvector   検索用
       -> PostgreSQL / Supabase   chat_logs 保存用
@@ -26,6 +28,7 @@ Browser
 - フロントエンドは同一オリジンの `/api/chat` を呼びます
 - 検索は常に PostgreSQL + pgvector の hybrid 検索です
 - 会話ログ `chat_logs` は PostgreSQL に保存します
+- 回答への感想・知識不足は `feedback_logs` に保存します
 - `chat_logs` の保存先は、ローカル PostgreSQL でも Supabase でも構いません
 
 ## 主な機能
@@ -35,6 +38,7 @@ Browser
 - Gemini による回答生成
 - おすすめ質問 3 件の自動提案
 - 認証付きログ閲覧 API
+- 回答ごとのフィードバック収集
 
 ## 必要なもの
 
@@ -207,6 +211,21 @@ curl http://127.0.0.1:8000/api/admin/chat-logs \
 - `items` に質問と回答が入っている
 - `used_files` に参照した知識ファイルが入っている
 
+### フィードバック保存確認
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"chat_log_id":1,"helpful":false,"feedback_type":"knowledge_missing","comment":"知りたい情報が足りませんでした"}'
+```
+
+確認:
+
+```bash
+curl http://127.0.0.1:8000/api/admin/feedback-logs \
+  -H "X-Admin-Key: 設定した管理キー"
+```
+
 ## API
 
 ### `GET /api/health`
@@ -251,6 +270,43 @@ X-Admin-Key: 設定した管理キー
 | `knowledge_mode` | string | 例: `search` |
 | `q` | string | 質問文・回答文の部分一致検索 |
 
+### `POST /api/feedback`
+
+回答1件に対する感想・知識不足フィードバック保存用です。
+
+リクエスト例:
+
+```json
+{
+  "chat_log_id": 1,
+  "helpful": false,
+  "feedback_type": "knowledge_missing",
+  "comment": "知りたい情報が足りませんでした"
+}
+```
+
+`feedback_type` の候補:
+
+- `helpful`
+- `knowledge_missing`
+- `wrong_answer`
+- `hard_to_understand`
+- `other`
+
+### `GET /api/admin/feedback-logs`
+
+認証付きのフィードバック一覧 API です。
+
+主なクエリ:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `limit` | int | 取得件数 |
+| `offset` | int | 開始位置 |
+| `helpful` | bool | 役に立ったかどうか |
+| `feedback_type` | string | 例: `knowledge_missing` |
+| `q` | string | 質問文・回答文・コメントの部分一致検索 |
+
 ## 知識を追加・更新する時
 
 1. `src/backend/knowledge/` に Markdown を追加または更新する
@@ -267,6 +323,7 @@ docker compose exec chu-ai python rebuild_hybrid_index.py
 - `Enter` で送信されます
 - 会話履歴はブラウザ側で保持し、送信時に質問文へ同梱します
 - `chat_logs` には質問文、回答文、回答可否、使用知識、会話履歴、おすすめ質問が保存されます
+- `feedback_logs` には回答評価、知識不足、自由記述が保存されます
 - `CHAT_LOG_ADMIN_API_KEY` が空だとログ閲覧 API は無効です
 
 ## 別端末から開く
