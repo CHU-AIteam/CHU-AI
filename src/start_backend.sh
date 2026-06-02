@@ -70,7 +70,7 @@ done
 
 printf "\n"
 echo "========================================"
-echo "Chu-AI backend is ready"
+echo "Chubu Commons AI backend is ready"
 echo "========================================"
 echo "Access URLs:"
 echo "  Local: http://127.0.0.1:${PORT}"

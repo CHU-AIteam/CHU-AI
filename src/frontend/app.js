@@ -11,8 +11,8 @@ const DEFAULT_HISTORY_MAX_EXCHANGES = 5;
 const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
 const TYPING_INTERVAL_MS = 18;
 const VALID_PASSWORDS = new Set(["commons", "commons."]);
-const BOT_NAME = "Chu-AI";
-const INITIAL_BOT_MESSAGE = "やっほー！質問を入力してね。";
+const BOT_NAME = "コモ";
+const INITIAL_BOT_MESSAGE = "やっほー！コモだよ。質問を入力してね。";
 
 const screenPassword = document.getElementById("screen-password");
 const screenTitle = document.getElementById("screen-title");

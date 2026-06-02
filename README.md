@@ -1,6 +1,6 @@
-# Chu-AI
+# Chubu Commons AI
 
-中部大学向けの案内チャットボットです。FastAPIバックエンドがAPIとフロントエンドを同じ `8000` 番ポートで配信します。検索は `legacy`（既存）と `hybrid`（PostgreSQL + ベクトル検索）を切り替えできます。
+Chubu Commons AIは、中部大学のコモンズやキャンパス情報を案内するチャットボットです。エージェント名は「コモ」です。FastAPIバックエンドがAPIとフロントエンドを同じ `8000` 番ポートで配信します。検索は常に `hybrid`（PostgreSQL + ベクトル検索）を使います。
 
 このREADMEは、リポジトリ全体の最短起動手順をまとめています。`src` 配下の詳しい構成や運用は [src/README.md](src/README.md) を参照してください。
 
@@ -96,8 +96,8 @@ http://<起動PCのIPアドレス>:8000
 | --- | --- | --- |
 | `API_KEY` | Gemini APIキー | `AIza...` |
 | `GEMINI_MODEL` | 使用するGeminiモデル | `gemini-2.5-flash` |
-| `KNOWLEDGE_MODE_DEFAULT` | APIで指定がない場合のナレッジ投入方法 | `all` または `search` |
-| `SEARCH_BACKEND_DEFAULT` | `search` 時の検索方式 | `legacy` または `hybrid` |
+| `KNOWLEDGE_MODE_DEFAULT` | ナレッジ投入方法。バックエンドでは常に `search` に強制 | `search` |
+| `SEARCH_BACKEND_DEFAULT` | 検索方式。バックエンドでは常に `hybrid` に強制 | `hybrid` |
 | `HOME_RETURN_SECONDS` | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | Geminiへ渡す過去会話の保持分数 | `2` |
@@ -107,7 +107,7 @@ http://<起動PCのIPアドレス>:8000
 | `HYBRID_EMBEDDING_MODEL` | 埋め込みモデル | `gemini-embedding-001` |
 | `HYBRID_EMBEDDING_DIM` | 埋め込みベクトル次元 | `768` |
 
-フロントエンドからの通常送信は `knowledge_mode: "search"` を指定します。APIを直接叩く場合のみ、リクエストごとに `search` / `all` を切り替えられます。
+フロントエンドからの通常送信は `knowledge_mode: "search"` を指定します。APIを直接叩いて `all` を送っても、バックエンド側で `search + hybrid` に強制されます。
 
 会話履歴はブラウザ上で保持し、API送信時に質問へ同梱します。`CHAT_HISTORY_MAX_EXCHANGES=0` または `CHAT_HISTORY_WINDOW_MINUTES=0` にすると、過去履歴をGeminiへ渡しません。
 

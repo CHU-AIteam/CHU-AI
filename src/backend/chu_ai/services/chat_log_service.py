@@ -54,7 +54,7 @@ def extract_conversation_history(text: str) -> list[dict[str, str]]:
         if not chunk:
             continue
 
-        match = re.search(r"ユーザー:\s*(.*?)\nChu-AI:\s*([\s\S]*)", chunk)
+        match = re.search(r"ユーザー:\s*(.*?)\n(?:コモ|Chu-AI):\s*([\s\S]*)", chunk)
         if not match:
             continue
 

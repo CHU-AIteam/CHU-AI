@@ -42,6 +42,57 @@ class RankedChunk:
     vector_rank: int | None
 
 
+def _format_candidate_preview(candidate: ChunkCandidate) -> str:
+    """検索候補1件をログで読みやすい1行へ整形する。"""
+    return (
+        f"{candidate.source_path} / {compact_log_text(candidate.section, max_chars=36)} "
+        f"(score={candidate.score:.4f})"
+    )
+
+
+def _format_ranked_preview(ranked: RankedChunk) -> str:
+    """RRF統合後の候補1件をログで読みやすい1行へ整形する。"""
+    return (
+        f"{ranked.candidate.source_path} / "
+        f"{compact_log_text(ranked.candidate.section, max_chars=36)} "
+        f"(fused={ranked.fused_score:.4f}, "
+        f"keyword_rank={ranked.keyword_rank or '-'}, "
+        f"vector_rank={ranked.vector_rank or '-'})"
+    )
+
+
+def _print_candidate_group(
+    label: str,
+    candidates: list[ChunkCandidate],
+    *,
+    limit: int = 5,
+) -> None:
+    """検索候補一覧の先頭数件をログ出力する。"""
+    print(f"  {label}:")
+    if not candidates:
+        print("    (none)")
+        return
+
+    for index, candidate in enumerate(candidates[:limit], start=1):
+        print(f"    {index}. {_format_candidate_preview(candidate)}")
+
+
+def _print_ranked_group(
+    label: str,
+    ranked_chunks: list[RankedChunk],
+    *,
+    limit: int = 5,
+) -> None:
+    """RRF統合結果の先頭数件をログ出力する。"""
+    print(f"  {label}:")
+    if not ranked_chunks:
+        print("    (none)")
+        return
+
+    for index, ranked in enumerate(ranked_chunks[:limit], start=1):
+        print(f"    {index}. {_format_ranked_preview(ranked)}")
+
+
 def initialize_hybrid_search_runtime() -> None:
     """起動時にhybrid検索基盤を初期化する。"""
     if not HYBRID_AUTO_INIT_DB:
@@ -154,6 +205,9 @@ def search_knowledge_hybrid(user_text: str) -> tuple[str, list[str]]:
     print(f"  Vector hits:   {len(vector_candidates)}")
     print(f"  Final chunks:  {min(len(ranked_chunks), HYBRID_FINAL_TOP_K)}")
     print(f"  Used files:    {format_used_files_for_log(used_files)}")
+    _print_candidate_group("Keyword top", keyword_candidates)
+    _print_candidate_group("Vector top", vector_candidates)
+    _print_ranked_group("RRF top", ranked_chunks)
     return knowledge_text, used_files
 
 
