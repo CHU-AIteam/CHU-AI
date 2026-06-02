@@ -174,4 +174,4 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 """チャットUIの静的ファイルディレクトリ"""
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-"""CHU-AIリポジトリのルートディレクトリ"""
+"""Chubu Commons AIリポジトリのルートディレクトリ"""

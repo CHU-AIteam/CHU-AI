@@ -156,24 +156,13 @@ select {
 
 .title-card .screen-title {
   font-family: "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
-  font-size: clamp(96px, 7.5vw, 188px);
-  letter-spacing: 0.04em;
+  width: 100%;
+  font-size: clamp(58px, 5.6vw, 104px);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
   color: #084b57;
   animation: titleRise 0.85s 0.08s ease both;
-}
-
-.title-card ruby {
-  display: inline-flex;
-  flex-direction: column-reverse;
-  align-items: center;
-}
-
-.title-card rt {
-  margin-bottom: -4px;
-  font-size: 0.24em;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: #52767c;
 }
 
 .title-card .screen-text {
@@ -773,6 +762,10 @@ textarea:focus {
 
   .screen-title {
     font-size: 30px;
+  }
+
+  .title-card .screen-title {
+    font-size: clamp(40px, 8vw, 72px);
   }
 
   .screen-text {

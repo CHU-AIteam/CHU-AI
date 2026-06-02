@@ -1,6 +1,6 @@
-# Chu-AI src
+# Chubu Commons AI src
 
-`src` はBIG PADや学内端末で動かす本番アプリ本体です。バックエンドはFastAPI、フロントエンドは静的HTML/CSS/JavaScriptです。
+`src` はBIG PADや学内端末で動かすChubu Commons AI本体です。エージェント名は「コモ」です。バックエンドはFastAPI、フロントエンドは静的HTML/CSS/JavaScriptです。
 
 バックエンドがフロントエンドも配信するため、通常は `8000` 番ポートだけを開けば動きます。
 
@@ -64,8 +64,8 @@ Copy-Item src\.env.example src\.env
 | --- | --- | --- | --- |
 | `API_KEY` | 必須 | Gemini APIキー | なし |
 | `GEMINI_MODEL` | 任意 | Geminiモデル名 | `gemini-2.5-flash` |
-| `KNOWLEDGE_MODE_DEFAULT` | 任意 | APIで未指定時のナレッジ投入方法 | `search` |
-| `SEARCH_BACKEND_DEFAULT` | 任意 | `knowledge_mode=search` の検索方式 | `legacy` |
+| `KNOWLEDGE_MODE_DEFAULT` | 任意 | ナレッジ投入方法。実行時は常に `search` に強制 | `search` |
+| `SEARCH_BACKEND_DEFAULT` | 任意 | 検索方式。実行時は常に `hybrid` に強制 | `hybrid` |
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | 任意 | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | 任意 | Geminiへ渡す過去会話の保持分数 | `2` |
@@ -213,7 +213,7 @@ Docker起動時は `docker-compose.yml` で `./data:/app/data` をマウント�
 | `used_knowledge_files_json` | 参照した知識ファイル名のJSON |
 | `used_conversation_json` | Geminiへ渡した過去会話のJSON |
 | `recommended_questions_json` | 次におすすめする質問3件のJSON |
-| `knowledge_mode` | `all` または `search` |
+| `knowledge_mode` | 実際に使ったナレッジモード。現在は `search` |
 | `request_text` | フロントエンドから届いた履歴込みの全文 |
 | `error_type` | APIエラーなどの種別 |
 | `error_message` | APIエラーなどの詳細 |
@@ -234,11 +234,13 @@ curl http://127.0.0.1:8000/api/health
 {
   "status": "ok",
   "model": "gemini-2.5-flash",
-  "knowledge_mode_default": "all",
+  "knowledge_mode_default": "search",
   "home_return_seconds": 30,
   "chat_history_max_exchanges": 5,
   "chat_history_window_minutes": 2,
-  "chat_log_enabled": true
+  "chat_log_enabled": true,
+  "search_backend_default": "hybrid",
+  "hybrid_db_configured": true
 }
 ```
 
@@ -247,7 +249,7 @@ curl http://127.0.0.1:8000/api/health
 ```bash
 curl -X POST http://127.0.0.1:8000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"text":"中部大学とは？","knowledge_mode":"all"}'
+  -d '{"text":"中部大学とは？","knowledge_mode":"search"}'
 ```
 
 リクエスト:
@@ -255,7 +257,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | 項目 | 型 | 役割 |
 | --- | --- | --- |
 | `text` | string | ユーザーの質問。フロントエンドでは過去会話も含めて送る |
-| `knowledge_mode` | string/null | `all` または `search`。省略時は `KNOWLEDGE_MODE_DEFAULT` |
+| `knowledge_mode` | string/null | リクエスト値。実行時はバックエンドで常に `search` に強制 |
 
 レスポンス:
 
@@ -269,28 +271,15 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 
 ## ナレッジモード
 
-`all`:
+現在は常に `search + hybrid` で動作します。クライアントが `knowledge_mode=all` を送っても、バックエンド側で `search` に上書きします。
 
-- `backend/knowledge/` のMarkdownを広く投入する
-- 回答に必要な情報を落としにくい
-- 入力量が増える
-
-`search`:
-
-- `99_knowledge_h2_summary_index.md` を使って関連ファイルを選ぶ
-- 入力量を抑えられる
-- 検索に失敗すると必要情報が落ちる可能性がある
-
-`SEARCH_BACKEND_DEFAULT=hybrid` の場合、`search` モードで次を実行します。
+hybrid検索では次を実行します。
 
 - PostgreSQLのキーワード検索候補
 - PostgreSQLのベクトル検索候補
 - RRFで統合した上位チャンクを採用
-- 失敗時は既存の `legacy` 検索へフォールバック
 
-現在のフロントエンドは通常送信時に `knowledge_mode: "search"` を指定します。そのため、UIからの送信では `KNOWLEDGE_MODE_DEFAULT` よりフロントエンド指定が優先されます。
-
-`KNOWLEDGE_MODE_DEFAULT` が効くのは、APIリクエストで `knowledge_mode` を省略した場合です。
+現在のフロントエンドは通常送信時に `knowledge_mode: "search"` を指定します。APIリクエストで `knowledge_mode` を省略した場合や `all` を送った場合も、実際のレスポンスは `search` になります。
 
 ## ログ
 

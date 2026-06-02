@@ -1,4 +1,4 @@
-"""Chu-AIバックエンドのservice層パッケージ。
+"""Chubu Commons AIバックエンドのservice層パッケージ。
 
 HTTP層から独立したユースケース処理を提供する。
 """

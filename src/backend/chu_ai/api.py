@@ -51,7 +51,7 @@ def _configure_stdio_utf8() -> None:
 
 _configure_stdio_utf8()
 
-app = FastAPI(title="Chu-AI Backend")
+app = FastAPI(title="Chubu Commons AI Backend")
 """フロントエンドから呼び出されるAPI"""
 
 app.add_middleware(
@@ -75,7 +75,7 @@ def startup_log() -> None:
     except Exception as error:
         hybrid_init_error = str(error)
 
-    print("Chu-AI runtime settings:")
+    print("Chubu Commons AI runtime settings:")
     print(f"  Knowledge mode: {FORCED_KNOWLEDGE_MODE} (forced)")
     print(f"  Search backend: {FORCED_SEARCH_BACKEND} (forced)")
     print(f"  Home return:    {HOME_RETURN_SECONDS}s")
