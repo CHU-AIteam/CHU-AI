@@ -162,10 +162,27 @@ CHAT_LOG_ENABLED = os.getenv("CHAT_LOG_ENABLED", "true").strip().lower() not in 
     "no",
     "off",
 }
-"""チャットログをSQLiteへ保存するかどうか"""
+"""チャットログを保存するかどうか"""
 
-CHAT_LOG_DB_PATH = os.getenv("CHAT_LOG_DB_PATH", "data/chu_ai.sqlite3").strip()
-"""チャットログSQLiteファイルのパス。相対パスはリポジトリルート基準。"""
+_chat_log_postgres_dsn = os.getenv("CHAT_LOG_POSTGRES_DSN")
+CHAT_LOG_POSTGRES_DSN = (
+    _chat_log_postgres_dsn.strip()
+    if _chat_log_postgres_dsn and _chat_log_postgres_dsn.strip()
+    else POSTGRES_DSN
+)
+"""チャットログ保存先のPostgreSQL DSN。未設定時は POSTGRES_DSN を流用する。"""
+
+CHAT_LOG_ADMIN_API_KEY = os.getenv("CHAT_LOG_ADMIN_API_KEY", "").strip()
+"""管理用チャットログAPIを呼ぶための固定キー。空なら閲覧APIを無効化する。"""
+
+CHAT_LOG_LIST_DEFAULT_LIMIT = get_positive_int_env("CHAT_LOG_LIST_DEFAULT_LIMIT", 50)
+"""チャットログ閲覧APIの既定件数。"""
+
+CHAT_LOG_LIST_MAX_LIMIT = get_positive_int_env("CHAT_LOG_LIST_MAX_LIMIT", 200)
+"""チャットログ閲覧APIで許可する最大取得件数。"""
+
+if CHAT_LOG_LIST_MAX_LIMIT < CHAT_LOG_LIST_DEFAULT_LIMIT:
+    CHAT_LOG_LIST_MAX_LIMIT = CHAT_LOG_LIST_DEFAULT_LIMIT
 
 KNOWLEDGE_DIR = Path(__file__).resolve().parents[1] / "knowledge"
 """回答元情報を置くディレクトリ"""

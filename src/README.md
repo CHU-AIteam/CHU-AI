@@ -69,8 +69,11 @@ Copy-Item src\.env.example src\.env
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | 任意 | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | 任意 | Geminiへ渡す過去会話の保持分数 | `2` |
-| `CHAT_LOG_ENABLED` | 任意 | 質問・回答ログをSQLiteへ保存するか | `true` |
-| `CHAT_LOG_DB_PATH` | 任意 | SQLiteログDBの保存先。相対パスはリポジトリルート基準 | `data/chu_ai.sqlite3` |
+| `CHAT_LOG_ENABLED` | 任意 | 質問・回答ログをPostgreSQLへ保存するか | `true` |
+| `CHAT_LOG_POSTGRES_DSN` | 任意 | ログ保存先PostgreSQL DSN。空なら `POSTGRES_DSN` を流用 | 空 |
+| `CHAT_LOG_ADMIN_API_KEY` | 任意 | 管理用ログAPIの固定キー。空なら閲覧APIを無効化 | 空 |
+| `CHAT_LOG_LIST_DEFAULT_LIMIT` | 任意 | ログ閲覧APIの既定取得件数 | `50` |
+| `CHAT_LOG_LIST_MAX_LIMIT` | 任意 | ログ閲覧APIの最大取得件数 | `200` |
 | `BACKEND_PORT` | 任意 | `start_backend.sh` の起動ポート | `8000` |
 | `KNOWLEDGE_TOP_K` | 任意 | `search` 時に採用するナレッジファイル数 | `4` |
 | `KNOWLEDGE_MAX_CHARS` | 任意 | 採用ナレッジ本文の最大文字数 | `26000` |
@@ -192,15 +195,13 @@ commons
 
 ## 回答ログDB
 
-`CHAT_LOG_ENABLED=true` の場合、`/api/chat` の処理結果をSQLiteへ保存します。DBファイルとテーブルはバックエンド起動時または初回保存時に自動作成します。
+`CHAT_LOG_ENABLED=true` の場合、`/api/chat` の処理結果をPostgreSQLの `chat_logs` テーブルへ保存します。テーブルはバックエンド起動時または初回保存時に自動作成します。
 
-既定の保存先:
+保存先:
 
-```text
-data/chu_ai.sqlite3
-```
-
-Docker起動時は `docker-compose.yml` で `./data:/app/data` をマウントします。そのため、コンテナを作り直してもホスト側の `data/chu_ai.sqlite3` にログが残ります。
+- `CHAT_LOG_POSTGRES_DSN` が設定されていれば、そのPostgreSQLを使う
+- 空なら `POSTGRES_DSN` を流用する
+- Supabaseへ送りたい場合は、Supabaseの接続文字列を `CHAT_LOG_POSTGRES_DSN` に入れる
 
 保存する主な項目:
 
@@ -209,16 +210,14 @@ Docker起動時は `docker-compose.yml` で `./data:/app/data` をマウント�
 | `asked_at` | 聞かれた時間。日本時間のISO形式 |
 | `question` | 今回の質問文 |
 | `answer` | 画面に表示した回答 |
-| `can_answer` | 回答可否。`1` が回答可、`0` が不可 |
-| `used_knowledge_files_json` | 参照した知識ファイル名のJSON |
-| `used_conversation_json` | Geminiへ渡した過去会話のJSON |
-| `recommended_questions_json` | 次におすすめする質問3件のJSON |
+| `can_answer` | 回答可否 |
+| `used_knowledge_files_json` | 参照した知識ファイル名のJSONB |
+| `used_conversation_json` | Geminiへ渡した過去会話のJSONB |
+| `recommended_questions_json` | 次におすすめする質問3件のJSONB |
 | `knowledge_mode` | 実際に使ったナレッジモード。現在は `search` |
 | `request_text` | フロントエンドから届いた履歴込みの全文 |
 | `error_type` | APIエラーなどの種別 |
 | `error_message` | APIエラーなどの詳細 |
-
-`data/` はgit管理外です。公開リポジトリにDB本体を含めないでください。
 
 ## API
 
@@ -239,6 +238,9 @@ curl http://127.0.0.1:8000/api/health
   "chat_history_max_exchanges": 5,
   "chat_history_window_minutes": 2,
   "chat_log_enabled": true,
+  "chat_log_storage": "postgres",
+  "chat_log_db_configured": true,
+  "chat_log_admin_api_enabled": false,
   "search_backend_default": "hybrid",
   "hybrid_db_configured": true
 }
@@ -269,6 +271,25 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | `used_files` | string[] | 回答生成に使ったナレッジファイル |
 | `knowledge_mode` | string | 実際に使ったナレッジモード |
 
+### 管理用ログ一覧
+
+`CHAT_LOG_ADMIN_API_KEY` を設定した場合だけ使えます。
+
+```bash
+curl http://127.0.0.1:8000/api/admin/chat-logs \
+  -H "X-Admin-Key: change-this-admin-key"
+```
+
+主なクエリ:
+
+| 項目 | 型 | 役割 |
+| --- | --- | --- |
+| `limit` | int | 取得件数。既定値は `CHAT_LOG_LIST_DEFAULT_LIMIT` |
+| `offset` | int | 取得開始位置 |
+| `can_answer` | bool | 回答可否で絞り込み |
+| `knowledge_mode` | string | 例: `search` |
+| `q` | string | 質問文・回答文の部分一致検索 |
+
 ## ナレッジモード
 
 現在は常に `search + hybrid` で動作します。クライアントが `knowledge_mode=all` を送っても、バックエンド側で `search` に上書きします。
@@ -289,6 +310,7 @@ hybrid検索では次を実行します。
 - ホーム復帰秒数
 - 会話履歴の最大往復数と保持分数
 - 回答ログDBの有効/無効と保存先
+- 管理用ログAPIの有効/無効
 - Local URL
 - LAN URL
 

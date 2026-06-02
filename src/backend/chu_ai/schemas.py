@@ -24,3 +24,36 @@ class ChatResponse(BaseModel):
     recommended_questions: list[str] = Field(default_factory=list)
     used_files: list[str] = Field(default_factory=list)
     knowledge_mode: str = KNOWLEDGE_MODE_DEFAULT
+
+
+class ChatLogConversationItem(BaseModel):
+    """過去会話1往復分"""
+
+    user: str
+    bot: str
+
+
+class ChatLogItem(BaseModel):
+    """管理画面向けチャットログ1件"""
+
+    id: int
+    asked_at: str
+    question: str
+    answer: str
+    can_answer: bool
+    used_files: list[str] = Field(default_factory=list)
+    used_conversation: list[ChatLogConversationItem] = Field(default_factory=list)
+    recommended_questions: list[str] = Field(default_factory=list)
+    knowledge_mode: str
+    request_text: str
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+class ChatLogListResponse(BaseModel):
+    """チャットログ一覧レスポンス"""
+
+    total: int
+    limit: int
+    offset: int
+    items: list[ChatLogItem] = Field(default_factory=list)
