@@ -142,6 +142,7 @@ select {
 .title-card .screen-label,
 .title-card .screen-title,
 .title-card .screen-text,
+.title-card .start-chat-cta,
 .title-card .start-chat-button {
   position: relative;
   z-index: 1;
@@ -173,6 +174,57 @@ select {
   animation: titleRise 0.95s 0.16s ease both;
 }
 
+.start-chat-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 34px;
+  margin: 26px auto 0;
+}
+
+.start-chat-hint {
+  position: relative;
+  margin: 0;
+  padding: 16px 24px 18px;
+  border: 2px solid rgba(5, 116, 107, 0.24);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(237, 249, 247, 0.96)),
+    var(--surface);
+  color: #064f58;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.35;
+  letter-spacing: 0.03em;
+  box-shadow:
+    0 16px 30px rgba(15, 63, 69, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  animation: titleRise 1s 0.2s ease both;
+}
+
+.start-chat-hint::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 18px;
+  border: 1px dashed rgba(226, 167, 46, 0.42);
+  pointer-events: none;
+}
+
+.start-chat-hint::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -13px;
+  width: 24px;
+  height: 24px;
+  border-right: 2px solid rgba(5, 116, 107, 0.24);
+  border-bottom: 2px solid rgba(5, 116, 107, 0.24);
+  background: rgba(246, 252, 251, 0.98);
+  transform: translateX(-50%) rotate(45deg);
+  box-shadow: 8px 8px 18px rgba(15, 63, 69, 0.08);
+}
+
 .start-chat-button {
   display: block;
   position: relative;
@@ -180,7 +232,7 @@ select {
   overflow: hidden;
   min-width: 520px;
   min-height: 104px;
-  margin: 34px auto 0;
+  margin: 0 auto;
   padding: 0 34px;
   border: 0;
   border-radius: 999px;
@@ -878,8 +930,19 @@ textarea:focus {
     width: 100%;
     min-width: 0;
     min-height: 82px;
-    margin-top: 28px;
     font-size: 30px;
+  }
+
+  .start-chat-cta {
+    width: 100%;
+    margin-top: 20px;
+    gap: 28px;
+  }
+
+  .start-chat-hint {
+    max-width: min(420px, 100%);
+    padding: 14px 18px 16px;
+    font-size: 18px;
   }
 
   .chat-title {
