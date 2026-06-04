@@ -37,22 +37,20 @@ from chu_ai.services.chat_log_service import (
     extract_conversation_history,
     extract_current_question_for_log,
     format_used_files_for_log,
-    get_chat_log_storage_label,
-    has_chat_log_database_config,
-    initialize_chat_log_db,
-    list_chat_logs,
-    save_chat_log,
 )
 from chu_ai.services.chat_service import FORCED_KNOWLEDGE_MODE, process_user_request
-from chu_ai.services.feedback_service import (
-    initialize_feedback_db,
-    list_feedback_logs,
-    normalize_feedback_type,
-    save_feedback,
-)
 from chu_ai.services.generation_service import normalize_recommended_questions
 from chu_ai.services.hybrid_search_service import initialize_hybrid_search_runtime
 from chu_ai.services.hybrid_store_service import has_hybrid_database_config
+from chu_ai.services.log_storage_service import (
+    get_log_storage_label,
+    has_log_storage_config,
+    initialize_log_storage,
+    list_chat_log_entries,
+    list_feedback_log_entries,
+    save_chat_log_entry,
+    save_feedback_entry,
+)
 
 
 FORCED_SEARCH_BACKEND = "hybrid"
@@ -98,8 +96,7 @@ def startup_log() -> None:
     chat_log_init_error = None
     if CHAT_LOG_ENABLED:
         try:
-            initialize_chat_log_db()
-            initialize_feedback_db()
+            initialize_log_storage()
         except Exception as error:
             chat_log_init_error = str(error)
 
@@ -118,10 +115,10 @@ def startup_log() -> None:
         f"{CHAT_HISTORY_MAX_EXCHANGES} exchanges / {CHAT_HISTORY_WINDOW_MINUTES:g} min"
     )
     if CHAT_LOG_ENABLED:
-        chat_log_status = get_chat_log_storage_label()
+        chat_log_status = get_log_storage_label()
         if chat_log_init_error:
             chat_log_status = f"{chat_log_status}, init failed ({chat_log_init_error})"
-        elif not has_chat_log_database_config():
+        elif not has_log_storage_config():
             chat_log_status = f"{chat_log_status}, not configured"
         print(f"  Chat log:       enabled ({chat_log_status})")
     else:
@@ -149,8 +146,8 @@ def health() -> dict:
         "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
         "chat_history_window_minutes": CHAT_HISTORY_WINDOW_MINUTES,
         "chat_log_enabled": CHAT_LOG_ENABLED,
-        "chat_log_storage": get_chat_log_storage_label(),
-        "chat_log_db_configured": has_chat_log_database_config(),
+        "chat_log_storage": get_log_storage_label(),
+        "chat_log_db_configured": has_log_storage_config(),
         "chat_log_admin_api_enabled": bool(CHAT_LOG_ADMIN_API_KEY),
         "search_backend_default": FORCED_SEARCH_BACKEND,
         "hybrid_db_configured": has_hybrid_database_config(),
@@ -178,7 +175,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         request_text, request.knowledge_mode
     )
 
-    chat_log_id = save_chat_log(
+    chat_log_id = save_chat_log_entry(
         asked_at=asked_at,
         question=current_question,
         answer=generation["answer"],
@@ -212,12 +209,11 @@ def chat(request: ChatRequest) -> ChatResponse:
 @app.post("/api/feedback", response_model=FeedbackResponse)
 def feedback(request: FeedbackRequest) -> FeedbackResponse:
     """回答1件に対する感想・知識不足フィードバックを保存するAPI"""
-    normalized_type = normalize_feedback_type(request.helpful, request.feedback_type)
     try:
-        feedback_id = save_feedback(
+        feedback_id = save_feedback_entry(
             chat_log_id=request.chat_log_id,
             helpful=request.helpful,
-            feedback_type=normalized_type,
+            feedback_type=request.feedback_type,
             comment=request.comment,
         )
     except ValueError as error:
@@ -246,7 +242,7 @@ def admin_chat_logs(
     """認証付きでチャットログ一覧を返すAPI"""
     _require_admin_api_key(x_admin_key)
     try:
-        total, items = list_chat_logs(
+        total, items = list_chat_log_entries(
             limit=limit,
             offset=offset,
             can_answer=can_answer,
@@ -255,6 +251,8 @@ def admin_chat_logs(
         )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=f"chat log list failed: {error}") from error
     return ChatLogListResponse(
         total=total,
         limit=limit,
@@ -279,7 +277,7 @@ def admin_feedback_logs(
     """認証付きでフィードバック一覧を返すAPI"""
     _require_admin_api_key(x_admin_key)
     try:
-        total, items = list_feedback_logs(
+        total, items = list_feedback_log_entries(
             limit=limit,
             offset=offset,
             helpful=helpful,
@@ -288,6 +286,8 @@ def admin_feedback_logs(
         )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=f"feedback log list failed: {error}") from error
 
     return FeedbackLogListResponse(
         total=total,

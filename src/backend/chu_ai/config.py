@@ -89,6 +89,16 @@ SEARCH_BACKEND_DEFAULT = get_choice_env(
 )
 """knowledge_mode=search で使う検索バックエンド"""
 
+VALID_LOG_STORAGE_MODES = {"postgres", "google_sheets"}
+"""利用可能なチャットログ・フィードバック保存先"""
+
+LOG_STORAGE_MODE = get_choice_env(
+    "LOG_STORAGE_MODE",
+    "postgres",
+    VALID_LOG_STORAGE_MODES,
+)
+"""chat_logs / feedback_logs の保存先"""
+
 POSTGRES_DSN = os.getenv("POSTGRES_DSN", "").strip()
 """ハイブリッド検索用PostgreSQL DSN"""
 
@@ -183,6 +193,21 @@ CHAT_LOG_LIST_MAX_LIMIT = get_positive_int_env("CHAT_LOG_LIST_MAX_LIMIT", 200)
 
 if CHAT_LOG_LIST_MAX_LIMIT < CHAT_LOG_LIST_DEFAULT_LIMIT:
     CHAT_LOG_LIST_MAX_LIMIT = CHAT_LOG_LIST_DEFAULT_LIMIT
+
+GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+"""Google Sheets APIで使うサービスアカウントJSONのパス"""
+
+GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "").strip()
+"""chat_logs / feedback_logs を保存するGoogleスプレッドシートID"""
+
+GOOGLE_CHAT_LOG_SHEET_NAME = os.getenv("GOOGLE_CHAT_LOG_SHEET_NAME", "chat_logs").strip()
+"""chat_logs を保存するシート名"""
+
+GOOGLE_FEEDBACK_LOG_SHEET_NAME = os.getenv(
+    "GOOGLE_FEEDBACK_LOG_SHEET_NAME",
+    "feedback_logs",
+).strip()
+"""feedback_logs を保存するシート名"""
 
 KNOWLEDGE_DIR = Path(__file__).resolve().parents[1] / "knowledge"
 """回答元情報を置くディレクトリ"""
