@@ -80,6 +80,7 @@ let homeReturnDeadlineTs = 0;
 let lastActivityResetAt = 0;
 let chatStateVersion = 0;
 let lastEnterSubmitAt = 0;
+let questionIsComposing = false;
 let currentInitialQuickQuestions = [];
 
 const FEEDBACK_OPTIONS = [
@@ -832,6 +833,14 @@ function bindEvents() {
       sendQuestion(question.value);
     };
 
+    question.addEventListener("compositionstart", () => {
+      questionIsComposing = true;
+    });
+
+    question.addEventListener("compositionend", () => {
+      questionIsComposing = false;
+    });
+
     question.addEventListener("keydown", (event) => {
       const isEnterKey =
         event.key === "Enter" ||
@@ -841,15 +850,10 @@ function bindEvents() {
       if (!isEnterKey) {
         return;
       }
-      event.preventDefault();
-      submitFromEnter();
-    });
-
-    question.addEventListener("beforeinput", (event) => {
-      const isLineBreakInput =
-        event.inputType === "insertLineBreak" ||
-        event.inputType === "insertParagraph";
-      if (!isLineBreakInput) {
+      if (event.isComposing || questionIsComposing || event.keyCode === 229) {
+        return;
+      }
+      if (event.shiftKey) {
         return;
       }
       event.preventDefault();
