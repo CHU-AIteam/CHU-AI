@@ -4,7 +4,7 @@ API境界のデータ構造を明確にし、
 バリデーション以外の処理ロジックは持たない。
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
 from chu_ai.config import KNOWLEDGE_MODE_DEFAULT
@@ -25,7 +25,7 @@ class ChatResponse(BaseModel):
     recommended_questions: list[str] = Field(default_factory=list)
     used_files: list[str] = Field(default_factory=list)
     knowledge_mode: str = KNOWLEDGE_MODE_DEFAULT
-    chat_log_id: int | None = None
+    chat_log_id: str | None = None
 
 
 FeedbackType = Literal[
@@ -41,17 +41,28 @@ FeedbackType = Literal[
 class FeedbackRequest(BaseModel):
     """回答1件に対する感想・知識不足フィードバック"""
 
-    chat_log_id: int = Field(ge=1)
+    chat_log_id: str | int
     helpful: bool
     feedback_type: FeedbackType
     comment: str | None = Field(default=None, max_length=500)
+
+    @field_validator("chat_log_id", mode="before")
+    @classmethod
+    def normalize_chat_log_id(cls, value: object) -> str:
+        """Postgresの数値IDとSheetsの文字列IDを同じAPIで受ける。"""
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("chat_log_id is required")
+        if len(normalized) > 80:
+            raise ValueError("chat_log_id is too long")
+        return normalized
 
 
 class FeedbackResponse(BaseModel):
     """フィードバック保存結果"""
 
     ok: bool = True
-    feedback_id: int
+    feedback_id: str
 
 
 class ChatLogConversationItem(BaseModel):
@@ -64,7 +75,7 @@ class ChatLogConversationItem(BaseModel):
 class ChatLogItem(BaseModel):
     """管理画面向けチャットログ1件"""
 
-    id: int
+    id: str
     asked_at: str
     question: str
     answer: str
@@ -90,8 +101,8 @@ class ChatLogListResponse(BaseModel):
 class FeedbackLogItem(BaseModel):
     """管理画面向けフィードバック1件"""
 
-    id: int
-    chat_log_id: int
+    id: str
+    chat_log_id: str
     helpful: bool
     feedback_type: FeedbackType
     comment: str | None = None

@@ -69,9 +69,14 @@ Copy-Item src\.env.example src\.env
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
 | `CHAT_HISTORY_MAX_EXCHANGES` | 任意 | Geminiへ渡す過去会話の最大往復数 | `5` |
 | `CHAT_HISTORY_WINDOW_MINUTES` | 任意 | Geminiへ渡す過去会話の保持分数 | `2` |
-| `CHAT_LOG_ENABLED` | 任意 | 質問・回答ログをPostgreSQLへ保存するか | `true` |
+| `CHAT_LOG_ENABLED` | 任意 | 質問・回答ログを保存するか | `true` |
+| `LOG_STORAGE_MODE` | 任意 | `postgres` または `google_sheets` | `postgres` |
 | `CHAT_LOG_POSTGRES_DSN` | 任意 | ログ保存先PostgreSQL DSN。空なら `POSTGRES_DSN` を流用 | 空 |
 | `CHAT_LOG_ADMIN_API_KEY` | 任意 | 管理用ログAPIの固定キー。空なら閲覧APIを無効化 | 空 |
+| `GOOGLE_SERVICE_ACCOUNT_FILE` | 任意 | Google Sheets保存用Service Account JSONパス | 空 |
+| `GOOGLE_SHEETS_SPREADSHEET_ID` | 任意 | 保存先スプレッドシートID | 空 |
+| `GOOGLE_CHAT_LOG_SHEET_NAME` | 任意 | chat_logs保存シート名 | `chat_logs` |
+| `GOOGLE_FEEDBACK_LOG_SHEET_NAME` | 任意 | feedback_logs保存シート名 | `feedback_logs` |
 | `CHAT_LOG_LIST_DEFAULT_LIMIT` | 任意 | ログ閲覧APIの既定取得件数 | `50` |
 | `CHAT_LOG_LIST_MAX_LIMIT` | 任意 | ログ閲覧APIの最大取得件数 | `200` |
 | `BACKEND_PORT` | 任意 | `start_backend.sh` の起動ポート | `8000` |
@@ -160,6 +165,8 @@ Python 3.11が必要です。
 commons
 ```
 
+これは展示用の簡易ゲートです。フロントエンド内に含まれるため、本番認証や秘密情報の保護には使わないでください。
+
 チャット画面:
 
 - 左側にチャット欄
@@ -193,20 +200,22 @@ commons
 - エラー、回答不可、またはおすすめ質問が3件揃わない場合は、既存ボタンの文言を変更しない
 - ホームへ戻って会話状態をリセットした場合は、初期ボタンへ戻す
 
-## 回答ログDB
+## 回答ログ保存
 
-`CHAT_LOG_ENABLED=true` の場合、`/api/chat` の処理結果をPostgreSQLの `chat_logs` テーブルへ保存します。テーブルはバックエンド起動時または初回保存時に自動作成します。
+`CHAT_LOG_ENABLED=true` の場合、`/api/chat` の処理結果を保存します。保存先は `LOG_STORAGE_MODE` で切り替えます。
 
 保存先:
 
-- `CHAT_LOG_POSTGRES_DSN` が設定されていれば、そのPostgreSQLを使う
-- 空なら `POSTGRES_DSN` を流用する
-- Supabaseへ送りたい場合は、Supabaseの接続文字列を `CHAT_LOG_POSTGRES_DSN` に入れる
+- `LOG_STORAGE_MODE=postgres` ならPostgreSQLの `chat_logs` テーブルへ保存する
+- `CHAT_LOG_POSTGRES_DSN` が空なら `POSTGRES_DSN` を流用する
+- `LOG_STORAGE_MODE=google_sheets` ならGoogle Sheetsの `chat_logs` シートへ保存する
+- 学校Wi-Fiで外部PostgreSQL接続が失敗する場合は `google_sheets` が候補
 
 保存する主な項目:
 
 | 項目 | 内容 |
 | --- | --- |
+| `chat_log_id` | Google Sheets保存時の文字列ID |
 | `asked_at` | 聞かれた時間。日本時間のISO形式 |
 | `question` | 今回の質問文 |
 | `answer` | 画面に表示した回答 |
@@ -219,9 +228,9 @@ commons
 | `error_type` | APIエラーなどの種別 |
 | `error_message` | APIエラーなどの詳細 |
 
-## フィードバックDB
+## フィードバック保存
 
-回答バブルの下に、`役に立った` / `足りなかった` のフィードバックUIを出します。送信された内容は PostgreSQL の `feedback_logs` テーブルへ保存します。
+回答バブルの下に、`役に立った` / `足りなかった` のフィードバックUIを出します。送信された内容は、選択中の保存先に `feedback_logs` として保存します。
 
 保存する主な項目:
 
@@ -284,21 +293,21 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | `recommended_questions` | string[] | 次におすすめする質問。回答可なら入力欄上の既存3ボタンへ反映する |
 | `used_files` | string[] | 回答生成に使ったナレッジファイル |
 | `knowledge_mode` | string | 実際に使ったナレッジモード |
-| `chat_log_id` | int/null | 保存された `chat_logs.id` |
+| `chat_log_id` | string/null | 保存された回答ログID |
 
 ### フィードバック送信
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/feedback \
   -H "Content-Type: application/json" \
-  -d '{"chat_log_id":1,"helpful":false,"feedback_type":"knowledge_missing","comment":"知りたい情報が足りませんでした"}'
+  -d '{"chat_log_id":"チャット応答で返ったchat_log_id","helpful":false,"feedback_type":"knowledge_missing","comment":"知りたい情報が足りませんでした"}'
 ```
 
 リクエスト:
 
 | 項目 | 型 | 役割 |
 | --- | --- | --- |
-| `chat_log_id` | int | 対象の回答ログID |
+| `chat_log_id` | string | 対象の回答ログID |
 | `helpful` | bool | 役に立ったかどうか |
 | `feedback_type` | string | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `other` |
 | `comment` | string/null | 自由記述。500文字まで |

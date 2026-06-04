@@ -20,6 +20,7 @@ htmlcov/
 
 # Runtime / local artifacts
 data/
+secrets/
 *.log
 *.pid
 *.sqlite3
