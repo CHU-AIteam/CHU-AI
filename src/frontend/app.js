@@ -87,6 +87,7 @@ const FEEDBACK_OPTIONS = [
   { value: "knowledge_missing", label: "知識がない" },
   { value: "wrong_answer", label: "答えが違う" },
   { value: "hard_to_understand", label: "わかりにくい" },
+  { value: "knowledge_request", label: "知識を追加してほしい" },
   { value: "other", label: "その他" },
 ];
 
@@ -490,6 +491,16 @@ function renderFeedbackPrompt(message, payload) {
   optionRow.className = "message-feedback-options";
 
   let selectedType = "knowledge_missing";
+  const updateFeedbackDetailCopy = () => {
+    const isKnowledgeRequest = selectedType === "knowledge_request";
+    detailLabel.textContent = isKnowledgeRequest
+      ? "どのような知識ですか？"
+      : "どこが足りなかった？";
+    commentInput.placeholder = isKnowledgeRequest
+      ? "例：自販機の場所、トイレの場所、不言実行館で借りられるもの"
+      : "知りたかったこと、足りなかった点があれば教えてね";
+  };
+
   const optionButtons = FEEDBACK_OPTIONS.map((option) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -504,6 +515,9 @@ function renderFeedbackPrompt(message, payload) {
       optionButtons.forEach((item) => {
         item.classList.toggle("selected", item === button);
       });
+      updateFeedbackDetailCopy();
+      status.textContent = "";
+      status.classList.remove("error");
     });
     optionRow.appendChild(button);
     return button;
@@ -587,13 +601,23 @@ function renderFeedbackPrompt(message, payload) {
   });
 
   submitButton.addEventListener("click", () => {
+    const comment = commentInput.value.trim();
+    if (selectedType === "knowledge_request" && !comment) {
+      status.textContent = "追加してほしい知識を書いてから送信してね。";
+      status.classList.add("error");
+      commentInput.focus();
+      scrollFeedbackIntoView();
+      return;
+    }
+
     submitFeedback({
       helpful: false,
       feedbackType: selectedType,
-      comment: commentInput.value.trim(),
+      comment,
     });
   });
 
+  updateFeedbackDetailCopy();
   scrollFeedbackIntoView();
 }
 

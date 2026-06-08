@@ -238,7 +238,7 @@ commons
 | --- | --- |
 | `chat_log_id` | どの回答に対する感想か |
 | `helpful` | 役に立ったかどうか |
-| `feedback_type` | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `other` |
+| `feedback_type` | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `knowledge_request`, `other` |
 | `comment` | 自由記述 |
 | `created_at` | 登録時刻 |
 
@@ -309,7 +309,7 @@ curl -X POST http://127.0.0.1:8000/api/feedback \
 | --- | --- | --- |
 | `chat_log_id` | string | 対象の回答ログID |
 | `helpful` | bool | 役に立ったかどうか |
-| `feedback_type` | string | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `other` |
+| `feedback_type` | string | `helpful`, `knowledge_missing`, `wrong_answer`, `hard_to_understand`, `knowledge_request`, `other` |
 | `comment` | string/null | 自由記述。500文字まで |
 
 ### 管理用ログ一覧

@@ -215,6 +215,7 @@ Supabase 直結もコード上は可能ですが、学校 Wi-Fi で `5432` 接�
 - `knowledge_missing`
 - `wrong_answer`
 - `hard_to_understand`
+- `knowledge_request`
 - `other`
 
 ## セキュリティ
