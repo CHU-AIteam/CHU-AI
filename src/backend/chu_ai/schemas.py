@@ -33,6 +33,7 @@ FeedbackType = Literal[
     "knowledge_missing",
     "wrong_answer",
     "hard_to_understand",
+    "knowledge_request",
     "other",
 ]
 """フィードバック種別。"""

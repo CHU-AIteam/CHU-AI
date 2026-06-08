@@ -20,6 +20,7 @@ VALID_FEEDBACK_TYPES = {
     "knowledge_missing",
     "wrong_answer",
     "hard_to_understand",
+    "knowledge_request",
     "other",
 }
 """許可するフィードバック種別。"""
