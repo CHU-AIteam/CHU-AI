@@ -192,6 +192,11 @@ def chat(request: ChatRequest) -> ChatResponse:
         recommended_questions=generation["recommended_questions"],
         knowledge_mode=normalized_mode,
         request_text=request_text,
+        router_route=generation["router_route"],
+        router_response_type=generation["router_response_type"],
+        router_confidence=generation["router_confidence"],
+        router_reason=generation["router_reason"],
+        router_skipped_rag=generation["router_skipped_rag"],
         error_type=generation["error_type"],
         error_message=generation["error_message"],
     )

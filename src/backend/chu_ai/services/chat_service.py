@@ -54,4 +54,13 @@ def process_user_request(
 
     raw_result_text = generate_text(knowledge_text, request_text, route_context)
     generation = build_generation_result(raw_result_text, current_question)
+    generation.update(
+        {
+            "router_route": route_decision.route,
+            "router_response_type": route_decision.response_type,
+            "router_confidence": route_decision.confidence,
+            "router_reason": route_decision.reason,
+            "router_skipped_rag": route_decision.should_skip_rag,
+        }
+    )
     return generation, used_files, normalized_mode
