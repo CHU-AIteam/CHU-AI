@@ -18,13 +18,16 @@ from chu_ai.services.chat_log_service import (
 
 
 DEFAULT_RECOMMENDED_QUESTIONS = [
-    "中部大学にはどんな学部がありますか？",
-    "コモンズでは何ができますか？",
-    "食堂について教えて",
-    "中部大学の就職支援について教えて",
-    "キャンパス施設について教えて",
+    "勉強場所は？",
+    "トイレどこ？",
+    "自販機どこ？",
+    "不言実行館は？",
+    "借りられる物は？",
 ]
 """Gemini出力が不正な時に使う既定のおすすめ質問"""
+
+VALID_RESPONSE_TYPES = {"chat", "knowledge", "unknown", "clarify", "usage"}
+"""フロントエンドに返してよい回答分類"""
 
 
 def normalize_bool(value, fallback: bool = False) -> bool:
@@ -107,6 +110,27 @@ def guess_can_answer(answer: str) -> bool:
     return bool(answer.strip()) and not any(marker in answer for marker in unknown_markers)
 
 
+def normalize_response_type(value: object, can_answer: bool) -> str:
+    """Gemini JSON内の回答分類を画面制御用の文字列へ正規化する関数"""
+    response_type = str(value or "").strip().lower()
+    if response_type in VALID_RESPONSE_TYPES:
+        if response_type == "knowledge" and not can_answer:
+            return "unknown"
+        return response_type
+    if not can_answer:
+        return "unknown"
+    return "knowledge"
+
+
+def normalize_can_answer_for_type(can_answer: bool, response_type: str) -> bool:
+    """回答分類と回答可否が矛盾した時に安全側へ寄せる関数"""
+    if response_type == "unknown":
+        return False
+    if response_type in {"chat", "clarify", "usage"}:
+        return True
+    return can_answer
+
+
 def build_generation_result(raw_text: str, current_question: str) -> dict:
     """GeminiのJSON出力を画面表示用データへ変換する関数"""
     fallback_answer = (
@@ -122,6 +146,7 @@ def build_generation_result(raw_text: str, current_question: str) -> dict:
         return {
             "answer": fallback_answer,
             "can_answer": fallback_can_answer,
+            "response_type": normalize_response_type(None, fallback_can_answer),
             "recommended_questions": []
             if error_type is not None
             else normalize_recommended_questions([], current_question),
@@ -137,10 +162,13 @@ def build_generation_result(raw_text: str, current_question: str) -> dict:
     can_answer = normalize_bool(data.get("can_answer"), fallback_can_answer)
     if error_type is not None:
         can_answer = False
+    response_type = normalize_response_type(data.get("response_type"), can_answer)
+    can_answer = normalize_can_answer_for_type(can_answer, response_type)
 
     return {
         "answer": answer,
         "can_answer": can_answer,
+        "response_type": response_type,
         "recommended_questions": normalize_recommended_questions(
             data.get("recommended_questions"),
             current_question,
@@ -151,8 +179,13 @@ def build_generation_result(raw_text: str, current_question: str) -> dict:
     }
 
 
-def build_generation_prompt(knowledge_text: str, user_text: str) -> str:
+def build_generation_prompt(
+    knowledge_text: str,
+    user_text: str,
+    route_context: str = "",
+) -> str:
     """Geminiへ渡すプロンプトを組み立てる関数"""
+    route_section = f"\n【事前分類】\n{route_context}" if route_context else ""
     return f"""
 【指示】
 {AI_prompt}
@@ -160,6 +193,7 @@ def build_generation_prompt(knowledge_text: str, user_text: str) -> str:
 {RESPONSE_JSON_INSTRUCTION}
 【性格】
 {chara_personality}
+{route_section}
 【ナレッジ】
 {knowledge_text}
 【質問】
@@ -177,7 +211,7 @@ def api_key_is_valid(api_key: str) -> bool:
     return api_key.startswith("AIza") and len(api_key) >= 30
 
 
-def call_gemini_api(prompt_text: str) -> str:
+def call_gemini_api(prompt_text: str, model: str = GEMINI_MODEL) -> str:
     """Geminiを呼び出して回答文を返す関数"""
     try:
         from google import genai
@@ -194,7 +228,7 @@ def call_gemini_api(prompt_text: str) -> str:
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=model,
             contents=prompt_text,
             config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(thinking_budget=0)
@@ -205,9 +239,13 @@ def call_gemini_api(prompt_text: str) -> str:
         return f"エラーが発生しただよ...: {error}"
 
 
-def generate_text(knowledge_text: str, user_text: str) -> str:
+def generate_text(
+    knowledge_text: str,
+    user_text: str,
+    route_context: str = "",
+) -> str:
     """ナレッジと質問からGemini回答文を生成する関数"""
-    prompt_text = build_generation_prompt(knowledge_text, user_text)
+    prompt_text = build_generation_prompt(knowledge_text, user_text, route_context)
     current_question = extract_current_question_for_log(user_text)
 
     print("Generation request:")

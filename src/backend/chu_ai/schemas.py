@@ -9,6 +9,9 @@ from typing import Literal
 
 from chu_ai.config import KNOWLEDGE_MODE_DEFAULT
 
+ResponseType = Literal["chat", "knowledge", "unknown", "clarify", "usage"]
+"""回答の扱いを決める分類。"""
+
 
 class ChatRequest(BaseModel):
     """フロントエンドから受け取る質問"""
@@ -22,6 +25,7 @@ class ChatResponse(BaseModel):
 
     answer: str
     can_answer: bool = True
+    response_type: ResponseType = "knowledge"
     recommended_questions: list[str] = Field(default_factory=list)
     used_files: list[str] = Field(default_factory=list)
     knowledge_mode: str = KNOWLEDGE_MODE_DEFAULT

@@ -62,6 +62,21 @@ def get_choice_env(name: str, default: str, valid_values: set[str]) -> str:
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 """文章生成に使うGeminiモデル"""
 
+ROUTER_ENABLED = get_bool_env("ROUTER_ENABLED", True)
+"""事前分類ルーターを使うかどうか"""
+
+ROUTER_MODEL = (
+    os.getenv("ROUTER_MODEL", "gemini-3.1-flash-lite").strip()
+    or "gemini-3.1-flash-lite"
+)
+"""RAG要否の事前分類に使うGeminiモデル"""
+
+ROUTER_CONFIDENCE_THRESHOLD = min(
+    get_non_negative_float_env("ROUTER_CONFIDENCE_THRESHOLD", 0.85),
+    1.0,
+)
+"""RAG検索をスキップしてよいルーター信頼度の下限"""
+
 KNOWLEDGE_INDEX_FILE = "99_knowledge_h2_summary_index.md"
 """ナレッジ選定に使うH2要約目次ファイル"""
 

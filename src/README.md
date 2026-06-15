@@ -64,6 +64,9 @@ Copy-Item src\.env.example src\.env
 | --- | --- | --- | --- |
 | `API_KEY` | 必須 | Gemini APIキー | なし |
 | `GEMINI_MODEL` | 任意 | Geminiモデル名 | `gemini-2.5-flash` |
+| `ROUTER_ENABLED` | 任意 | RAG前の事前分類を使うか | `true` |
+| `ROUTER_MODEL` | 任意 | 事前分類に使うGeminiモデル | `gemini-3.1-flash-lite` |
+| `ROUTER_CONFIDENCE_THRESHOLD` | 任意 | RAG検索をスキップする信頼度下限 | `0.85` |
 | `KNOWLEDGE_MODE_DEFAULT` | 任意 | ナレッジ投入方法。実行時は常に `search` に強制 | `search` |
 | `SEARCH_BACKEND_DEFAULT` | 任意 | 検索方式。実行時は常に `hybrid` に強制 | `hybrid` |
 | `HOME_RETURN_SECONDS` | 任意 | チャット画面からホームへ戻る秒数 | `30` |
@@ -200,6 +203,18 @@ commons
 - エラー、回答不可、またはおすすめ質問が3件揃わない場合は、既存ボタンの文言を変更しない
 - ホームへ戻って会話状態をリセットした場合は、初期ボタンへ戻す
 
+回答分類:
+
+- GeminiがJSONで `response_type` を返す
+- 事前分類ルーターが `direct` と高信頼度で判定した `chat` / `usage` はRAG検索をスキップする
+- 事前分類に失敗した場合、信頼度が低い場合、事実質問の可能性がある場合は必ずRAG検索する
+- `chat` は挨拶、雑談、感謝、励ましなどの会話として扱う
+- `knowledge` はナレッジに基づく施設、場所、制度、貸出物などの回答として扱う
+- `unknown` は事実質問だが、現在のナレッジでは答えられない回答として扱う
+- `clarify` は場所や条件が足りず、追加質問が必要な回答として扱う
+- `usage` はアプリの使い方説明として扱う
+- フィードバックUIは `knowledge` / `unknown` / `clarify` の回答に表示する
+
 ## 回答ログ保存
 
 `CHAT_LOG_ENABLED=true` の場合、`/api/chat` の処理結果を保存します。保存先は `LOG_STORAGE_MODE` で切り替えます。
@@ -290,6 +305,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | --- | --- | --- |
 | `answer` | string | Geminiが生成した回答 |
 | `can_answer` | boolean | 回答できたかどうか |
+| `response_type` | string | `chat` / `knowledge` / `unknown` / `clarify` / `usage` の回答分類 |
 | `recommended_questions` | string[] | 次におすすめする質問。回答可なら入力欄上の既存3ボタンへ反映する |
 | `used_files` | string[] | 回答生成に使ったナレッジファイル |
 | `knowledge_mode` | string | 実際に使ったナレッジモード |

@@ -11,6 +11,7 @@ from chu_ai.services.chat_log_service import (
 )
 from chu_ai.services.generation_service import build_generation_result, generate_text
 from chu_ai.services.knowledge_service import search_knowledge
+from chu_ai.services.router_service import build_direct_route_context, route_user_request
 
 
 FORCED_KNOWLEDGE_MODE = "search"
@@ -35,7 +36,22 @@ def process_user_request(
             f"-> forced={FORCED_KNOWLEDGE_MODE}"
         )
 
-    knowledge_text, used_files = search_knowledge(request_text, normalized_mode)
-    raw_result_text = generate_text(knowledge_text, request_text)
+    route_decision = route_user_request(request_text, current_question)
+    print("Route decision:")
+    print(f"  Route:      {route_decision.route}")
+    print(f"  Type:       {route_decision.response_type}")
+    print(f"  Confidence: {route_decision.confidence:.2f}")
+    print(f"  Skip RAG:   {route_decision.should_skip_rag}")
+    print(f"  Reason:     {compact_log_text(route_decision.reason)}")
+
+    route_context = ""
+    if route_decision.should_skip_rag:
+        knowledge_text = ""
+        used_files = []
+        route_context = build_direct_route_context(route_decision)
+    else:
+        knowledge_text, used_files = search_knowledge(request_text, normalized_mode)
+
+    raw_result_text = generate_text(knowledge_text, request_text, route_context)
     generation = build_generation_result(raw_result_text, current_question)
     return generation, used_files, normalized_mode

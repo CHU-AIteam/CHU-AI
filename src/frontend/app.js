@@ -13,7 +13,12 @@ const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
 const TYPING_INTERVAL_MS = 18;
 const VALID_PASSWORDS = new Set(["commons", "commons."]);
 const BOT_NAME = "コモ";
-const INITIAL_BOT_MESSAGE = "やっほー！コモだよ。質問を入力してね。";
+const INITIAL_BOT_MESSAGE =
+  "やっほー！コモだよ。中部大のことでも、ちょっとした雑談でも聞いてね。";
+const THINKING_MESSAGE_LABEL = "コモが考えてるよ";
+const CONNECTION_ERROR_MESSAGE =
+  "ごめん、今ちょっと通信が迷子みたい。バックエンドが起動しているか確認してね。";
+const FEEDBACK_RESPONSE_TYPES = new Set(["knowledge", "unknown", "clarify"]);
 const INITIAL_QUICK_QUESTION_POOL = [
   "中部大学とは？",
   "建学の精神は？",
@@ -264,7 +269,7 @@ function addThinkingMessage() {
   messageText.className = "message-text thinking-text";
 
   const label = document.createElement("span");
-  label.textContent = "思考中";
+  label.textContent = THINKING_MESSAGE_LABEL;
 
   const dots = document.createElement("span");
   dots.className = "thinking-dots";
@@ -364,6 +369,10 @@ function renderRecommendedQuestions(questions, canAnswer) {
       });
     }, 420);
   }, 130);
+}
+
+function shouldShowFeedback(responseType) {
+  return FEEDBACK_RESPONSE_TYPES.has(String(responseType || "").toLowerCase());
 }
 
 function handleQuickQuestionClick(button) {
@@ -758,9 +767,11 @@ async function sendQuestion(text) {
     }
     pushExchange(requestText, data.answer);
     renderRecommendedQuestions(data.recommended_questions, data.can_answer);
-    renderFeedbackPrompt(typeResult.message, {
-      chatLogId: data.chat_log_id,
-    });
+    if (shouldShowFeedback(data.response_type)) {
+      renderFeedbackPrompt(typeResult.message, {
+        chatLogId: data.chat_log_id,
+      });
+    }
     setStatus("");
     noteUserActivity(true);
   } catch (error) {
@@ -768,7 +779,7 @@ async function sendQuestion(text) {
       return;
     }
     removeThinkingMessage(thinkingMessage);
-    addMessage(BOT_NAME, `接続エラーだよ。バックエンドが起動しているか確認してね。\n${error.message}`, "bot");
+    addMessage(BOT_NAME, `${CONNECTION_ERROR_MESSAGE}\n${error.message}`, "bot");
     setStatus("エラー", "error");
   } finally {
     removeThinkingMessage(thinkingMessage);
