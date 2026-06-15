@@ -90,6 +90,11 @@ class ChatLogItem(BaseModel):
     recommended_questions: list[str] = Field(default_factory=list)
     knowledge_mode: str
     request_text: str
+    router_route: str | None = None
+    router_response_type: str | None = None
+    router_confidence: float | None = None
+    router_reason: str | None = None
+    router_skipped_rag: bool | None = None
     error_type: str | None = None
     error_message: str | None = None
 

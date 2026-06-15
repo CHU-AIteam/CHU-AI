@@ -40,6 +40,11 @@ CHAT_LOG_HEADERS = [
     "error_type",
     "error_message",
     "created_at",
+    "router_route",
+    "router_response_type",
+    "router_confidence",
+    "router_reason",
+    "router_skipped_rag",
 ]
 
 FEEDBACK_LOG_HEADERS = [
@@ -100,6 +105,23 @@ def _parse_bool(value: str | bool | None) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_optional_bool(value: str | bool | None) -> bool | None:
+    """空欄をNoneとして扱い、値がある時だけboolへ戻す。"""
+    if value is None or str(value).strip() == "":
+        return None
+    return _parse_bool(value)
+
+
+def _parse_float_or_none(value: str | None) -> float | None:
+    """Sheetsから読んだ数値文字列をfloatへ戻す。"""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def _quote_sheet_name(sheet_name: str) -> str:
@@ -249,6 +271,11 @@ def save_chat_log_to_google_sheets(
     recommended_questions: list[str],
     knowledge_mode: str,
     request_text: str,
+    router_route: str | None = None,
+    router_response_type: str | None = None,
+    router_confidence: float | None = None,
+    router_reason: str | None = None,
+    router_skipped_rag: bool | None = None,
     error_type: str | None = None,
     error_message: str | None = None,
 ) -> str:
@@ -269,6 +296,11 @@ def save_chat_log_to_google_sheets(
         error_type or "",
         error_message or "",
         _now_jst(),
+        router_route or "",
+        router_response_type or "",
+        "" if router_confidence is None else str(router_confidence),
+        router_reason or "",
+        "" if router_skipped_rag is None else _bool_text(router_skipped_rag),
     ]
 
     _append_row(GOOGLE_CHAT_LOG_SHEET_NAME, row)
@@ -426,6 +458,11 @@ def _chat_record_to_item(record: dict[str, str]) -> dict:
         "recommended_questions": _parse_json_list(record.get("recommended_questions_json")),
         "knowledge_mode": record.get("knowledge_mode", ""),
         "request_text": record.get("request_text", ""),
+        "router_route": record.get("router_route") or None,
+        "router_response_type": record.get("router_response_type") or None,
+        "router_confidence": _parse_float_or_none(record.get("router_confidence")),
+        "router_reason": record.get("router_reason") or None,
+        "router_skipped_rag": _parse_optional_bool(record.get("router_skipped_rag")),
         "error_type": record.get("error_type") or None,
         "error_message": record.get("error_message") or None,
     }

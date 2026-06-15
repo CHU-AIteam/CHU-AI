@@ -176,6 +176,16 @@ def initialize_chat_log_db() -> None:
                 ON chat_logs (knowledge_mode)
                 """
             )
+            cursor.execute(
+                """
+                ALTER TABLE chat_logs
+                ADD COLUMN IF NOT EXISTS router_route TEXT,
+                ADD COLUMN IF NOT EXISTS router_response_type TEXT,
+                ADD COLUMN IF NOT EXISTS router_confidence DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS router_reason TEXT,
+                ADD COLUMN IF NOT EXISTS router_skipped_rag BOOLEAN
+                """
+            )
 
 
 def save_chat_log(
@@ -189,6 +199,11 @@ def save_chat_log(
     recommended_questions: list[str],
     knowledge_mode: str,
     request_text: str,
+    router_route: str | None = None,
+    router_response_type: str | None = None,
+    router_confidence: float | None = None,
+    router_reason: str | None = None,
+    router_skipped_rag: bool | None = None,
     error_type: str | None = None,
     error_message: str | None = None,
 ) -> int | None:
@@ -223,10 +238,15 @@ def save_chat_log(
                         recommended_questions_json,
                         knowledge_mode,
                         request_text,
+                        router_route,
+                        router_response_type,
+                        router_confidence,
+                        router_reason,
+                        router_skipped_rag,
                         error_type,
                         error_message
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -239,6 +259,11 @@ def save_chat_log(
                         Jsonb(recommended_questions),
                         knowledge_mode,
                         request_text,
+                        router_route,
+                        router_response_type,
+                        router_confidence,
+                        router_reason,
+                        router_skipped_rag,
                         error_type,
                         error_message,
                     ),
@@ -316,6 +341,11 @@ def list_chat_logs(
                     recommended_questions_json,
                     knowledge_mode,
                     request_text,
+                    router_route,
+                    router_response_type,
+                    router_confidence,
+                    router_reason,
+                    router_skipped_rag,
                     error_type,
                     error_message
                 FROM chat_logs
@@ -346,6 +376,11 @@ def list_chat_logs(
                 "recommended_questions": list(row["recommended_questions_json"] or []),
                 "knowledge_mode": row["knowledge_mode"],
                 "request_text": row["request_text"],
+                "router_route": row["router_route"],
+                "router_response_type": row["router_response_type"],
+                "router_confidence": row["router_confidence"],
+                "router_reason": row["router_reason"],
+                "router_skipped_rag": row["router_skipped_rag"],
                 "error_type": row["error_type"],
                 "error_message": row["error_message"],
             }

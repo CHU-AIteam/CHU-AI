@@ -240,6 +240,11 @@ commons
 | `recommended_questions_json` | 次におすすめする質問3件のJSONB |
 | `knowledge_mode` | 実際に使ったナレッジモード。現在は `search` |
 | `request_text` | フロントエンドから届いた履歴込みの全文 |
+| `router_route` | 事前分類ルーターの振り分け。`direct` または `rag` |
+| `router_response_type` | ルーターが推定した回答分類 |
+| `router_confidence` | ルーターの信頼度。0.0〜1.0 |
+| `router_reason` | ルーターがその振り分けにした理由 |
+| `router_skipped_rag` | RAG検索をスキップしたか |
 | `error_type` | APIエラーなどの種別 |
 | `error_message` | APIエラーなどの詳細 |
 
