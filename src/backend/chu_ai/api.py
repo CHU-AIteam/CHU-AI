@@ -22,6 +22,9 @@ from chu_ai.config import (
     GEMINI_MODEL,
     HOME_RETURN_SECONDS,
     HYBRID_AUTO_INIT_DB,
+    ROUTER_CONFIDENCE_THRESHOLD,
+    ROUTER_ENABLED,
+    ROUTER_MODEL,
 )
 from chu_ai.schemas import (
     ChatLogListResponse,
@@ -141,6 +144,9 @@ def health() -> dict:
     return {
         "status": "ok",
         "model": GEMINI_MODEL,
+        "router_enabled": ROUTER_ENABLED,
+        "router_model": ROUTER_MODEL,
+        "router_confidence_threshold": ROUTER_CONFIDENCE_THRESHOLD,
         "knowledge_mode_default": FORCED_KNOWLEDGE_MODE,
         "home_return_seconds": HOME_RETURN_SECONDS,
         "chat_history_max_exchanges": CHAT_HISTORY_MAX_EXCHANGES,
@@ -162,6 +168,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         return ChatResponse(
             answer="質問を入力してね。",
             can_answer=False,
+            response_type="unknown",
             recommended_questions=normalize_recommended_questions([], ""),
             used_files=[],
             knowledge_mode=FORCED_KNOWLEDGE_MODE,
@@ -192,6 +199,7 @@ def chat(request: ChatRequest) -> ChatResponse:
     print("Chat response:")
     print(f"  Mode:           {normalized_mode}")
     print(f"  Can answer:     {generation['can_answer']}")
+    print(f"  Response type:  {generation['response_type']}")
     print(f"  Used knowledge: {format_used_files_for_log(used_files)}")
     print(f"  Recommended:    {len(generation['recommended_questions'])} questions")
     print(f"  Answer preview: {compact_log_text(generation['answer'])}")
@@ -199,6 +207,7 @@ def chat(request: ChatRequest) -> ChatResponse:
     return ChatResponse(
         answer=generation["answer"],
         can_answer=generation["can_answer"],
+        response_type=generation["response_type"],
         recommended_questions=generation["recommended_questions"],
         used_files=used_files,
         knowledge_mode=normalized_mode,
