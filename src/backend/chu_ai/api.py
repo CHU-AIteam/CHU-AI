@@ -169,6 +169,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             answer="質問を入力してね。",
             can_answer=False,
             response_type="unknown",
+            emotion="confused",
             recommended_questions=normalize_recommended_questions([], ""),
             used_files=[],
             knowledge_mode=FORCED_KNOWLEDGE_MODE,
@@ -205,6 +206,7 @@ def chat(request: ChatRequest) -> ChatResponse:
     print(f"  Mode:           {normalized_mode}")
     print(f"  Can answer:     {generation['can_answer']}")
     print(f"  Response type:  {generation['response_type']}")
+    print(f"  Emotion:        {generation['emotion']}")
     print(f"  Used knowledge: {format_used_files_for_log(used_files)}")
     print(f"  Recommended:    {len(generation['recommended_questions'])} questions")
     print(f"  Answer preview: {compact_log_text(generation['answer'])}")
@@ -213,6 +215,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         answer=generation["answer"],
         can_answer=generation["can_answer"],
         response_type=generation["response_type"],
+        emotion=generation["emotion"],
         recommended_questions=generation["recommended_questions"],
         used_files=used_files,
         knowledge_mode=normalized_mode,

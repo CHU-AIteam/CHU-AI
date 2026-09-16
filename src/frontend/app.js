@@ -19,6 +19,34 @@ const THINKING_MESSAGE_LABEL = "コモが考えてるよ";
 const CONNECTION_ERROR_MESSAGE =
   "ごめん、今ちょっと通信が迷子みたい。バックエンドが起動しているか確認してね。";
 const FEEDBACK_RESPONSE_TYPES = new Set(["knowledge", "unknown", "clarify"]);
+const AVATAR_ASSET_URL = "./assets/avatar/komo/komo-puppet.png";
+const AVATAR_FACE_ASSET_URL = "./assets/avatar/komo/komo-face-blank.png";
+const AVATAR_BADGE_ASSET_URL = "./assets/avatar/komo/chubu-support-badge.png";
+const AVATAR_EMOTIONS = new Set([
+  "neutral",
+  "happy",
+  "sad",
+  "angry",
+  "surprised",
+  "thinking",
+  "confused",
+]);
+const RESPONSE_TYPE_EMOTIONS = {
+  chat: "happy",
+  knowledge: "neutral",
+  unknown: "sad",
+  clarify: "confused",
+  usage: "happy",
+};
+const AVATAR_STATE_LABELS = {
+  neutral: "待機中",
+  happy: "うれしい",
+  sad: "しょんぼり",
+  angry: "むっとしてる",
+  surprised: "びっくり",
+  thinking: "考え中",
+  confused: "困ってる",
+};
 const INITIAL_QUICK_QUESTION_POOL = [
   "中部大学とは？",
   "建学の精神は？",
@@ -72,6 +100,11 @@ const send = document.getElementById("send");
 const messages = document.getElementById("messages");
 const messageList = document.getElementById("message-list") || messages;
 const statusText = document.getElementById("status");
+const avatarCard = document.getElementById("avatar-card");
+const avatarStage = document.getElementById("avatar-stage");
+const avatarCanvas = document.getElementById("avatar-canvas");
+const avatarFallback = document.getElementById("avatar-fallback");
+const avatarState = document.getElementById("avatar-state");
 const quickButtons = document.querySelectorAll(".quick-button");
 const exchangeHistory = [];
 
@@ -87,6 +120,9 @@ let chatStateVersion = 0;
 let lastEnterSubmitAt = 0;
 let questionIsComposing = false;
 let currentInitialQuickQuestions = [];
+let avatarPuppet = null;
+let currentAvatarEmotion = "neutral";
+let avatarSpeaking = false;
 
 const FEEDBACK_OPTIONS = [
   { value: "knowledge_missing", label: "知識がない" },
@@ -214,6 +250,9 @@ function openTitleScreen({ resetChat = false } = {}) {
 function openChatScreen() {
   showScreen(chatApp);
   noteUserActivity(true);
+  window.requestAnimationFrame(() => {
+    resizeAvatarPuppet();
+  });
   if (question) {
     question.focus();
   }
@@ -227,6 +266,92 @@ function setStatus(text, className) {
   statusText.className = "status";
   if (className) {
     statusText.classList.add(className);
+  }
+}
+
+function normalizeAvatarEmotion(value, responseType = "") {
+  const emotion = String(value || "").trim().toLowerCase();
+  if (AVATAR_EMOTIONS.has(emotion)) {
+    return emotion;
+  }
+  return RESPONSE_TYPE_EMOTIONS[String(responseType || "").toLowerCase()] || "neutral";
+}
+
+function setAvatarStateLabel(text) {
+  if (avatarState) {
+    avatarState.textContent = text;
+  }
+}
+
+function setAvatarEmotion(value, responseType = "", { playMotion = true } = {}) {
+  const emotion = normalizeAvatarEmotion(value, responseType);
+  currentAvatarEmotion = emotion;
+  if (avatarCard) {
+    avatarCard.dataset.emotion = emotion;
+  }
+  if (!avatarSpeaking) {
+    setAvatarStateLabel(AVATAR_STATE_LABELS[emotion]);
+  }
+  avatarPuppet?.setEmotion(emotion, { animate: playMotion });
+}
+
+function startAvatarSpeaking() {
+  avatarSpeaking = true;
+  if (avatarCard) {
+    avatarCard.classList.add("is-speaking");
+  }
+  avatarPuppet?.setSpeaking(true);
+  setAvatarStateLabel("話してるよ");
+}
+
+function stopAvatarSpeaking() {
+  avatarSpeaking = false;
+  avatarPuppet?.setSpeaking(false);
+  if (avatarCard) {
+    avatarCard.classList.remove("is-speaking");
+  }
+  setAvatarStateLabel(AVATAR_STATE_LABELS[currentAvatarEmotion]);
+}
+
+function resizeAvatarPuppet() {
+  avatarPuppet?.resize();
+}
+
+function setAvatarLoadError(message) {
+  if (avatarCard) {
+    avatarCard.dataset.loaded = "false";
+  }
+  if (avatarFallback) {
+    avatarFallback.textContent = message;
+  }
+  setAvatarStateLabel("利用できません");
+}
+
+async function initAvatarPuppet() {
+  if (!avatarCard || !avatarStage || !avatarCanvas) {
+    return;
+  }
+
+  if (!window.PIXI || !window.KomoPuppet) {
+    setAvatarLoadError("アバターエンジンを読み込めませんでした");
+    return;
+  }
+
+  try {
+    avatarPuppet = await window.KomoPuppet.create({
+      canvas: avatarCanvas,
+      stage: avatarStage,
+      assetUrl: AVATAR_ASSET_URL,
+      faceAssetUrl: AVATAR_FACE_ASSET_URL,
+      badgeAssetUrl: AVATAR_BADGE_ASSET_URL,
+    });
+    avatarCard.dataset.loaded = "true";
+    resizeAvatarPuppet();
+    setAvatarEmotion(currentAvatarEmotion, "", { playMotion: false });
+    window.addEventListener("resize", resizeAvatarPuppet);
+  } catch (error) {
+    console.warn("Komo avatar initialization failed", error);
+    setAvatarLoadError("アバターを読み込めませんでした");
   }
 }
 
@@ -407,6 +532,8 @@ function sleep(ms) {
 function resetChatState() {
   chatStateVersion += 1;
   exchangeHistory.length = 0;
+  stopAvatarSpeaking();
+  setAvatarEmotion("happy", "chat");
   setInputLocked(false);
   resetQuickQuestions();
   setStatus("");
@@ -728,6 +855,8 @@ async function sendQuestion(text) {
   question.value = "";
   setInputLocked(true);
   setStatus("回答中", "loading");
+  stopAvatarSpeaking();
+  setAvatarEmotion("thinking", "clarify");
   const thinkingMessage = addThinkingMessage();
 
   try {
@@ -756,12 +885,15 @@ async function sendQuestion(text) {
     }
     removeThinkingMessage(thinkingMessage);
     setStatus("表示中", "loading");
+    setAvatarEmotion(data.emotion, data.response_type);
+    startAvatarSpeaking();
     const typeResult = await typeMessage(
       BOT_NAME,
       data.answer,
       "bot",
       () => currentStateVersion === chatStateVersion,
     );
+    stopAvatarSpeaking();
     if (!typeResult.completed || currentStateVersion !== chatStateVersion) {
       return;
     }
@@ -779,10 +911,13 @@ async function sendQuestion(text) {
       return;
     }
     removeThinkingMessage(thinkingMessage);
+    stopAvatarSpeaking();
+    setAvatarEmotion("confused", "unknown");
     addMessage(BOT_NAME, `${CONNECTION_ERROR_MESSAGE}\n${error.message}`, "bot");
     setStatus("エラー", "error");
   } finally {
     removeThinkingMessage(thinkingMessage);
+    stopAvatarSpeaking();
     if (currentStateVersion !== chatStateVersion) {
       return;
     }
@@ -903,6 +1038,7 @@ async function initialize() {
   await loadRuntimeSettings();
   resetQuickQuestions();
   bindEvents();
+  void initAvatarPuppet();
   showScreen(screenPassword);
   if (passwordInput) {
     passwordInput.focus();

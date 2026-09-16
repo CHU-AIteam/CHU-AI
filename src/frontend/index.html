@@ -4,7 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chubu Commons AI</title>
-    <link rel="stylesheet" href="./style.css?v=20260608-01">
+    <link rel="stylesheet" href="./style.css?v=20260724-komo-01">
+    <link rel="stylesheet" href="./komo-stage.css?v=20260727-layout-04">
   </head>
   <body>
     <main class="screen" id="screen-password">
@@ -43,18 +44,25 @@
     <main class="app hidden" id="chat-app">
       <div class="chat-layout">
         <section class="chat-column">
-          <section class="chat-area" aria-label="会話">
-            <header class="header">
+          <header class="header">
+            <div class="brand-lockup">
+              <span class="brand-symbol" aria-hidden="true">K</span>
               <div>
-                <p class="label">Chubu Commons AI</p>
-                <h1 class="chat-title">コモ</h1>
+                <p class="label">CHUBU COMMONS AI</p>
+                <h1 class="chat-title">コモと話そう</h1>
               </div>
-              <div class="header-actions">
-                <div class="status" id="status"></div>
-                <button type="button" id="back-to-home" class="home-back-button">ホームへ戻る</button>
-              </div>
-            </header>
+            </div>
+            <div class="header-actions">
+              <div class="status" id="status"></div>
+              <button type="button" id="back-to-home" class="home-back-button">ホームへ戻る</button>
+            </div>
+          </header>
 
+          <section class="chat-area" aria-label="会話">
+            <div class="section-heading chat-heading">
+              <span class="section-title">COMMENT</span>
+              <span class="section-code">LIVE CHAT</span>
+            </div>
             <div class="messages" id="messages" aria-live="polite">
               <div class="message-list" id="message-list">
                 <article class="message bot">
@@ -66,6 +74,10 @@
           </section>
 
           <section class="input-area" aria-label="質問入力">
+            <div class="input-caption">
+              <strong>ASK KOMO</strong>
+              <span>聞きたいことを選ぶか、自由に入力してね</span>
+            </div>
             <div class="quick-buttons" aria-label="よくある質問">
               <button type="button" class="quick-button">中部大学とは？</button>
               <button type="button" class="quick-button">コモンズとは？</button>
@@ -85,21 +97,29 @@
           </section>
         </section>
 
-        <aside class="guide-column" aria-label="使用方法">
-          <section class="guide-card">
-            <p class="guide-title">使用方法</p>
-            <ol class="guide-list">
-              <li>左の入力欄に聞きたいことを入れてね。</li>
-              <li>Enterで送信、Shift+Enterで改行できるよ。</li>
-              <li>入力欄上のよくある質問ボタンもタップしてOK。</li>
-              <li>しばらく操作しないとホームに戻るから、続ける時は画面を触ってね。</li>
-            </ol>
+        <aside class="guide-column" aria-label="コモ">
+          <section class="avatar-card" id="avatar-card" data-emotion="neutral" aria-label="コモのアニメーションアバター">
+            <div class="stage-heading">
+              <p class="stage-eyebrow">CHUBU UNIVERSITY</p>
+              <p class="stage-title">COMMONS<br>CONCIERGE</p>
+            </div>
+            <div class="avatar-stage" id="avatar-stage">
+              <canvas id="avatar-canvas"></canvas>
+              <div class="avatar-fallback" id="avatar-fallback" role="status">コモを準備中...</div>
+            </div>
+            <div class="avatar-meta">
+              <p class="avatar-name">コモ</p>
+              <p class="avatar-state" id="avatar-state" aria-live="polite">待機中</p>
+            </div>
+            <p class="stage-touch-note">TOUCH KOMO / REACTION</p>
           </section>
         </aside>
       </div>
       <div id="home-return-warning" class="home-return-warning hidden" aria-live="polite"></div>
     </main>
 
-    <script src="./app.js?v=20260608-01"></script>
+    <script src="./vendor/pixi.min.js"></script>
+    <script src="./avatar-puppet.js?v=20260727-komo-13"></script>
+    <script src="./app.js?v=20260727-komo-02"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 # Chubu Commons AI
 
-Chubu Commons AI は、中部大学のコモンズ、施設、学食、学部学科、大学案内情報を案内するチャットアプリです。エージェント名は「コモ」です。
+Chubu Commons AI は、中部大学のコモンズ、施設、学食、学部学科、大学案内情報を案内するチャットアプリです。案内キャラクター名は「コモ」です。
 
 FastAPI バックエンドと静的フロントエンドを Docker で起動し、同じ `8000` 番ポートで配信します。知識検索は常に `search + hybrid` です。クライアントが `all` を送ってもバックエンドで `search` に強制します。
 
@@ -19,6 +19,17 @@ Browser / BIG PAD
 ログとフィードバックは `LOG_STORAGE_MODE=google_sheets` で Google Sheets に保存します。学校 Wi-Fi では外部 PostgreSQL の `5432` が塞がれることがあるため、HTTPS 経由の Google Sheets API を標準にしています。
 
 PostgreSQL 保存モードも残していますが、これはローカル検証や Google Sheets 障害時の保険です。Supabase 直結は推奨構成から外しています。
+
+## アバター
+
+フロントエンドは、許諾済みのテレビ型キャラクター「コモ」の画像を PixiJS の2Dパペットとして表示します。画像をランタイムマスクでテレビ頭、アンテナ、胴体、両腕、両脚へ分け、次の動作をブラウザ上で合成します。
+
+- 自動まばたき、呼吸、視線追従
+- 回答表示中の口パク
+- 腕振り、アンテナの揺れ、足の動き、クリック時のリアクション
+- AI応答の `emotion` による表情切り替え
+
+`emotion` は `neutral`、`happy`、`sad`、`angry`、`surprised`、`thinking`、`confused` の7種類です。PixiJS本体と画像は `src/frontend/` からローカル配信するため、BIG PADが外部CDNへ接続できなくても動作します。
 
 ## 必要なもの
 
