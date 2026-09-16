@@ -19,7 +19,7 @@ const THINKING_MESSAGE_LABEL = "コモが考えてるよ";
 const CONNECTION_ERROR_MESSAGE =
   "ごめん、今ちょっと通信が迷子みたい。バックエンドが起動しているか確認してね。";
 const FEEDBACK_RESPONSE_TYPES = new Set(["knowledge", "unknown", "clarify"]);
-const AVATAR_ASSET_URL = "./assets/avatar/komo/komo-puppet.png";
+const AVATAR_ASSET_URL = "./assets/avatar/komo/komo-puppet.png?v=20260916-hand-02";
 const AVATAR_FACE_ASSET_URL = "./assets/avatar/komo/komo-face-blank.png";
 const AVATAR_BADGE_ASSET_URL = "./assets/avatar/komo/chubu-support-badge.png";
 const AVATAR_EMOTIONS = new Set([
