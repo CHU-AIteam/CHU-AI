@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chubu Commons AI</title>
-    <link rel="stylesheet" href="./style.css?v=20260930-ui-01">
-    <link rel="stylesheet" href="./komo-stage.css?v=20260930-ui-01">
+    <link rel="stylesheet" href="./style.css?v=20260930-ui-02">
+    <link rel="stylesheet" href="./komo-stage.css?v=20260930-ui-02">
   </head>
   <body>
     <main class="screen" id="screen-password">
@@ -57,7 +57,6 @@
           <section class="chat-column">
             <section class="chat-area" aria-label="会話">
               <div class="conversation-heading">
-                <h2>会話</h2>
                 <p>知りたいことをそのまま話しかけてください</p>
               </div>
               <div class="messages" id="messages" aria-live="polite">
@@ -93,19 +92,11 @@
 
           <aside class="guide-column" aria-label="コモ">
             <section class="avatar-card" id="avatar-card" data-emotion="neutral" aria-label="コモのアニメーションアバター">
-              <div class="stage-heading">
-                <span class="presence-dot" aria-hidden="true"></span>
-                <p>コモがいます</p>
-              </div>
               <div class="avatar-stage" id="avatar-stage">
                 <canvas id="avatar-canvas"></canvas>
                 <div class="avatar-fallback" id="avatar-fallback" role="status">コモを準備中...</div>
               </div>
-              <div class="avatar-meta">
-                <p class="avatar-name">コモ</p>
-                <p class="avatar-state" id="avatar-state" aria-live="polite">待機中</p>
-              </div>
-              <p class="stage-touch-note">触れるとリアクションします</p>
+              <p class="stage-touch-note"><span aria-hidden="true">✦</span> 触ってみよう！</p>
             </section>
           </aside>
         </div>
@@ -115,6 +106,6 @@
 
     <script src="./vendor/pixi.min.js"></script>
     <script src="./avatar-puppet.js?v=20260930-motion-01"></script>
-    <script src="./app.js?v=20260930-ui-01"></script>
+    <script src="./app.js?v=20260930-ui-02"></script>
   </body>
 </html>
