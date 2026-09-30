@@ -23,6 +23,25 @@
   const EFFECT_BLUE = 0x3b86dc;
   const BLUSH = 0x8b68d6;
   const CHARACTER_RIGHT_ARM_MIRROR_ROTATION = 1.06;
+  const IDLE_SEQUENCE = [
+    "glance",
+    "still",
+    "shift",
+    "still",
+    "wander",
+    "settle",
+    "still",
+    "wave",
+    "still",
+  ];
+  const IDLE_DURATIONS = {
+    still: 4.2,
+    glance: 3.5,
+    shift: 3.4,
+    wander: 5.4,
+    wave: 3.5,
+    settle: 2.6,
+  };
 
   function damp(current, target, speed, deltaSeconds) {
     const amount = 1 - Math.exp(-speed * deltaSeconds);
@@ -31,6 +50,20 @@
 
   function clamp(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, value));
+  }
+
+  function lerp(start, end, amount) {
+    return start + (end - start) * amount;
+  }
+
+  function smoothStep(value) {
+    const normalized = clamp(value, 0, 1);
+    return normalized * normalized * (3 - 2 * normalized);
+  }
+
+  function smootherStep(value) {
+    const normalized = clamp(value, 0, 1);
+    return normalized * normalized * normalized * (normalized * (normalized * 6 - 15) + 10);
   }
 
   async function loadTexture(url) {
@@ -66,6 +99,7 @@
       this.faceTexture = null;
       this.badgeTexture = null;
       this.root = null;
+      this.characterRig = null;
       this.headRig = null;
       this.antennaRig = null;
       this.bodyRig = null;
@@ -90,6 +124,20 @@
       this.pointerTargetX = 0;
       this.pointerTargetY = 0;
       this.antennaVelocity = 0;
+      this.active = true;
+      this.behaviorBlend = 0;
+      this.behaviorGazeX = 0;
+      this.behaviorGazeY = 0;
+      this.stageOffsetX = 0;
+      this.idleSequenceIndex = -1;
+      this.idleAction = {
+        name: "still",
+        startedAt: 0,
+        duration: 4.8,
+        direction: 1,
+        originX: 0,
+        targetX: 0,
+      };
       this.reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
       this.handlePointerMove = this.handlePointerMove.bind(this);
       this.handlePointerLeave = this.handlePointerLeave.bind(this);
@@ -141,6 +189,7 @@
 
     buildRig() {
       this.root = new window.PIXI.Container();
+      this.characterRig = new window.PIXI.Container();
 
       this.bodyRig = new window.PIXI.Container();
       this.bodyRig.pivot.set(627, 755);
@@ -307,7 +356,8 @@
         blankScreenRig,
         this.faceGraphics,
       );
-      this.root.addChild(this.bodyRig, this.headRig);
+      this.characterRig.addChild(this.bodyRig, this.headRig);
+      this.root.addChild(this.characterRig);
     }
 
     drawOpenEye(graphics, centerX, centerY, scale, gazeX, gazeY) {
@@ -519,8 +569,14 @@
         )
         * 0.2
         * idleGazeWeight;
-      const gazeX = Math.round(clamp(this.pointerX + idleGazeX, -1, 1) * 4) / 4;
-      const gazeY = Math.round(clamp(this.pointerY + idleGazeY, -1, 1) * 4) / 4;
+      const gazeX =
+        Math.round(
+          clamp(this.pointerX + idleGazeX + this.behaviorGazeX, -1, 1) * 4,
+        ) / 4;
+      const gazeY =
+        Math.round(
+          clamp(this.pointerY + idleGazeY + this.behaviorGazeY, -1, 1) * 4,
+        ) / 4;
       const key = `${this.emotion}:${eyesClosed}:${this.speaking}:${mouthStep}:${gazeX}:${gazeY}`;
       if (!force && key === this.faceRenderKey) {
         return;
@@ -545,134 +601,298 @@
       }
     }
 
+    advanceIdleAction() {
+      if (this.idleAction.name === "wander") {
+        this.stageOffsetX = this.idleAction.targetX;
+      }
+
+      this.idleSequenceIndex = (this.idleSequenceIndex + 1) % IDLE_SEQUENCE.length;
+      const name = IDLE_SEQUENCE[this.idleSequenceIndex];
+      const baseDuration = IDLE_DURATIONS[name] || 3.5;
+      const durationVariation =
+        Math.sin((this.idleSequenceIndex + 1) * 1.9 + this.elapsed * 0.07) * 0.35;
+      const direction =
+        Math.sin(this.elapsed * 0.37 + this.idleSequenceIndex * 1.7) >= 0 ? 1 : -1;
+      let targetX = this.stageOffsetX;
+
+      if (name === "wander") {
+        if (Math.abs(this.stageOffsetX) < 8) {
+          targetX = direction * 28;
+        } else {
+          targetX = -Math.sign(this.stageOffsetX) * 20;
+        }
+      }
+
+      this.idleAction = {
+        name,
+        startedAt: this.elapsed,
+        duration: Math.max(baseDuration + durationVariation, 1.8),
+        direction,
+        originX: this.stageOffsetX,
+        targetX,
+      };
+    }
+
+    getIdlePose() {
+      const action = this.idleAction;
+      const progress = clamp(
+        (this.elapsed - action.startedAt) / Math.max(action.duration, 0.01),
+        0,
+        1,
+      );
+      const transitionWindow = 0.18;
+      const envelope = smoothStep(
+        Math.min(
+          clamp(progress / transitionWindow, 0, 1),
+          clamp((1 - progress) / transitionWindow, 0, 1),
+        ),
+      );
+      const direction = action.direction;
+      const pose = {
+        characterX: this.stageOffsetX,
+        headX: 0,
+        headY: 0,
+        headRotation: 0,
+        bodyX: 0,
+        bodyY: 0,
+        bodyRotation: 0,
+        bodyScaleX: 1,
+        bodyScaleY: 1,
+        leftArmDelta: 0,
+        rightArmDelta: 0,
+        leftLegRotation: 0,
+        rightLegRotation: 0,
+        antennaRotation: 0,
+        gazeX: 0,
+        gazeY: 0,
+      };
+
+      if (action.name === "glance") {
+        pose.gazeX = direction * 0.72 * envelope;
+        pose.gazeY = -0.12 * envelope;
+        pose.headX = direction * 6 * envelope;
+        pose.headY = -1.5 * envelope;
+        pose.headRotation = direction * 0.052 * envelope;
+        pose.bodyRotation = -direction * 0.009 * envelope;
+        pose.leftArmDelta = -direction * 0.018 * envelope;
+        pose.rightArmDelta = direction * 0.018 * envelope;
+        pose.antennaRotation = -direction * 0.035 * envelope;
+      } else if (action.name === "shift") {
+        const weight = Math.sin(progress * Math.PI) * envelope;
+        pose.bodyX = direction * 9 * weight;
+        pose.bodyY = 1.5 * weight;
+        pose.bodyRotation = direction * 0.024 * weight;
+        pose.headX = direction * 4 * weight;
+        pose.headRotation = -direction * 0.032 * weight;
+        pose.leftArmDelta = -direction * 0.04 * weight;
+        pose.rightArmDelta = -direction * 0.04 * weight;
+        pose.leftLegRotation = direction * 0.035 * weight;
+        pose.rightLegRotation = direction * 0.018 * weight;
+        pose.gazeX = direction * 0.22 * weight;
+        pose.antennaRotation = -direction * 0.04 * weight;
+      } else if (action.name === "wander") {
+        const travel = smootherStep(progress);
+        const gaitEnvelope = Math.sin(progress * Math.PI);
+        const stepPhase = progress * Math.PI * 8;
+        const step = Math.sin(stepPhase) * gaitEnvelope;
+        const lift = Math.abs(Math.cos(stepPhase)) * gaitEnvelope;
+        pose.characterX = lerp(action.originX, action.targetX, travel);
+        pose.bodyY = -lift * 3.6;
+        pose.bodyRotation = direction * 0.016 * gaitEnvelope;
+        pose.headY = lift * 1.2;
+        pose.headRotation = -direction * 0.018 * gaitEnvelope - step * 0.007;
+        pose.leftArmDelta = -step * 0.085;
+        pose.rightArmDelta = step * 0.085;
+        pose.leftLegRotation = step * 0.095;
+        pose.rightLegRotation = -step * 0.095;
+        pose.gazeX = direction * 0.24 * gaitEnvelope;
+        pose.antennaRotation = -step * 0.045;
+      } else if (action.name === "wave") {
+        const wave = Math.sin(progress * Math.PI * 6) * envelope;
+        pose.bodyX = 5 * envelope;
+        pose.bodyY = -2 * envelope;
+        pose.bodyRotation = -0.026 * envelope;
+        pose.headX = 3 * envelope;
+        pose.headY = -2 * envelope;
+        pose.headRotation = 0.045 * envelope - wave * 0.006;
+        pose.leftArmDelta = 1.54 * envelope + wave * 0.12;
+        pose.rightArmDelta = -0.04 * envelope;
+        pose.leftLegRotation = -0.025 * envelope;
+        pose.rightLegRotation = 0.04 * envelope;
+        pose.gazeX = -0.12 * envelope;
+        pose.antennaRotation = wave * 0.055;
+      } else if (action.name === "settle") {
+        const rebound = Math.sin(progress * Math.PI * 2) * envelope;
+        const compression = Math.sin(progress * Math.PI) * envelope;
+        pose.bodyY = compression * 2.5;
+        pose.bodyScaleX = 1 + compression * 0.008;
+        pose.bodyScaleY = 1 - compression * 0.012;
+        pose.headY = -rebound * 1.8;
+        pose.headRotation = rebound * 0.012;
+        pose.leftArmDelta = rebound * 0.018;
+        pose.rightArmDelta = -rebound * 0.018;
+        pose.antennaRotation = -rebound * 0.07;
+      }
+
+      return pose;
+    }
+
     updateMotion(deltaSeconds) {
       this.pointerX = damp(this.pointerX, this.pointerTargetX, 7, deltaSeconds);
       this.pointerY = damp(this.pointerY, this.pointerTargetY, 7, deltaSeconds);
-      this.emotionPulse *= Math.exp(-3.4 * deltaSeconds);
+      this.emotionPulse *= Math.exp(-3.2 * deltaSeconds);
 
-      const motionScale = this.reduceMotion ? 0.25 : 1;
+      const motionScale = this.reduceMotion ? 0.18 : 1;
       const pointerActivity = clamp(
         Math.abs(this.pointerTargetX) + Math.abs(this.pointerTargetY),
         0,
         1,
       );
-      const idleWeight = (1 - pointerActivity * 0.62) * motionScale;
-      const slowSway = Math.sin(this.elapsed * 0.68);
-      const counterSway = Math.sin(this.elapsed * 1.34 + 0.7);
-      const sharedSwayX = (slowSway * 2.8 + counterSway * 0.8) * idleWeight;
-      const breath = Math.sin(this.elapsed * 1.85) * 0.009 * motionScale;
-      const sharedBobY =
-        (
-          Math.sin(this.elapsed * 1.75) * 2
-          + Math.sin(this.elapsed * 0.64 + 1.1) * 0.8
-        )
-        * motionScale;
-      let headRotation =
-        this.pointerX * 0.022
-        - slowSway * 0.012 * idleWeight
-        + counterSway * 0.004 * idleWeight;
-      let headOffsetX = this.pointerX * 7 + sharedSwayX;
-      let headOffsetY =
-        this.pointerY * 2
-        + Math.sin(this.elapsed * 0.82 + 2.2) * 0.9 * idleWeight;
-      let headScale = 1;
-      let bodyOffsetX = sharedSwayX;
-      let bodyOffsetY = 0;
-      let bodyRotation = slowSway * 0.006 * idleWeight;
-      let sharedPoseY = 0;
-      let bodyScaleX = 1 - breath * 0.3;
-      let bodyScaleY = 1 + breath;
-      let leftArmRotation =
-        CHARACTER_RIGHT_ARM_MIRROR_ROTATION
-        + (
-          Math.sin(this.elapsed * 0.92) * 0.023
-          + Math.sin(this.elapsed * 1.81) * 0.006
-        )
-        * idleWeight;
-      let rightArmRotation =
-        (
-          -Math.sin(this.elapsed * 0.92 + 0.4) * 0.021
-          - Math.sin(this.elapsed * 1.67 + 0.6) * 0.006
-        )
-        * idleWeight;
-      let leftLegRotation =
-        (
-          Math.sin(this.elapsed * 0.72 + 0.3) * 0.011
-          + Math.sin(this.elapsed * 1.4) * 0.003
-        )
-        * idleWeight;
-      let rightLegRotation =
-        (
-          -Math.sin(this.elapsed * 0.72 + 0.3) * 0.011
-          + Math.sin(this.elapsed * 1.3 + 0.4) * 0.003
-        )
-        * idleWeight;
-      let antennaTarget =
-        -headRotation * 0.7
-        + (
-          Math.sin(this.elapsed * 2.15) * 0.024
-          + Math.sin(this.elapsed * 0.73 + 0.9) * 0.013
-        )
-        * idleWeight;
+      const settledEmotion =
+        this.emotion === "neutral"
+        || (this.emotion === "happy" && this.emotionPulse < 0.05);
+      const canIdle =
+        settledEmotion
+        && !this.speaking
+        && this.elapsed >= this.waveUntil
+        && pointerActivity < 0.82;
 
-      if (this.emotion === "happy") {
-        headRotation += Math.sin(this.elapsed * 3.2) * 0.018 * motionScale;
-        sharedPoseY -= Math.abs(Math.sin(this.elapsed * 3.2)) * 3.5 * motionScale;
-        leftArmRotation = CHARACTER_RIGHT_ARM_MIRROR_ROTATION + 0.06;
-        rightArmRotation = -0.06;
-        leftLegRotation = -0.025;
-        rightLegRotation = 0.025;
-        antennaTarget += Math.sin(this.elapsed * 5.5) * 0.045 * motionScale;
-      } else if (this.emotion === "sad") {
-        headRotation -= 0.035;
-        headOffsetY += 6;
-        bodyOffsetY += 3;
-        bodyScaleY -= 0.012;
-        leftArmRotation = CHARACTER_RIGHT_ARM_MIRROR_ROTATION - 0.1;
-        rightArmRotation = 0.1;
-        antennaTarget -= 0.055;
-      } else if (this.emotion === "angry") {
-        headOffsetX += Math.sin(this.elapsed * 30) * 2.2 * motionScale;
-        headRotation += Math.sin(this.elapsed * 25) * 0.007 * motionScale;
-        leftArmRotation = CHARACTER_RIGHT_ARM_MIRROR_ROTATION + 0.18;
-        rightArmRotation = -0.18;
-        antennaTarget += Math.sin(this.elapsed * 9) * 0.05 * motionScale;
-      } else if (this.emotion === "surprised") {
-        headScale += 0.025 + this.emotionPulse * 0.055;
-        sharedPoseY -= 2 + this.emotionPulse * 5;
-        leftArmRotation = CHARACTER_RIGHT_ARM_MIRROR_ROTATION + 1.48;
-        rightArmRotation = -1.48;
-        antennaTarget += 0.08;
-      } else if (this.emotion === "thinking") {
-        headRotation -= 0.065;
-        headOffsetX -= 5;
-        rightArmRotation = -0.72 + Math.sin(this.elapsed * 1.6) * 0.025;
-        antennaTarget -= 0.035;
-      } else if (this.emotion === "confused") {
-        headRotation += Math.sin(this.elapsed * 2.4) * 0.065 * motionScale;
-        leftArmRotation =
-          CHARACTER_RIGHT_ARM_MIRROR_ROTATION
-          + 0.2
-          + Math.sin(this.elapsed * 2.4) * 0.08;
-        rightArmRotation = -0.2 - Math.sin(this.elapsed * 2.4) * 0.08;
-        antennaTarget += Math.sin(this.elapsed * 2.8) * 0.06 * motionScale;
+      if (
+        canIdle
+        && this.elapsed >= this.idleAction.startedAt + this.idleAction.duration
+      ) {
+        this.advanceIdleAction();
       }
 
-      const idleGesturePhase = (this.elapsed % 8.4) / 8.4;
-      if (
-        this.emotion === "neutral"
-        && idleGesturePhase >= 0.58
-        && idleGesturePhase <= 0.82
-      ) {
-        const gestureProgress = (idleGesturePhase - 0.58) / 0.24;
-        const gestureEnvelope = Math.sin(gestureProgress * Math.PI) * motionScale;
-        const gestureWave = Math.sin(gestureProgress * Math.PI * 2) * motionScale;
-        headRotation += gestureWave * 0.018;
-        headOffsetY -= gestureEnvelope * 1.6;
-        bodyRotation -= gestureWave * 0.004;
-        rightArmRotation -= gestureEnvelope * 0.16;
-        leftArmRotation += gestureEnvelope * 0.025;
-        antennaTarget += gestureWave * 0.045;
+      this.behaviorBlend = damp(
+        this.behaviorBlend,
+        canIdle ? 1 : 0,
+        canIdle ? 2.2 : 5.5,
+        deltaSeconds,
+      );
+
+      const idlePose = this.getIdlePose();
+      const behaviorWeight =
+        this.behaviorBlend * motionScale * (1 - pointerActivity * 0.72);
+      this.behaviorGazeX = damp(
+        this.behaviorGazeX,
+        idlePose.gazeX * behaviorWeight,
+        4,
+        deltaSeconds,
+      );
+      this.behaviorGazeY = damp(
+        this.behaviorGazeY,
+        idlePose.gazeY * behaviorWeight,
+        4,
+        deltaSeconds,
+      );
+
+      const slowSway = Math.sin(this.elapsed * 0.48);
+      const counterSway = Math.sin(this.elapsed * 0.93 + 0.7);
+      const quietWeight = (1 - pointerActivity * 0.7) * motionScale;
+      const sharedSwayX = (slowSway * 1.15 + counterSway * 0.35) * quietWeight;
+      const breath = Math.sin(this.elapsed * 1.42) * 0.0065 * motionScale;
+      const sharedBobY =
+        (
+          Math.sin(this.elapsed * 1.42) * 0.75
+          + Math.sin(this.elapsed * 0.52 + 1.1) * 0.35
+        )
+        * motionScale;
+
+      let characterOffsetX = lerp(
+        this.stageOffsetX,
+        idlePose.characterX,
+        behaviorWeight,
+      );
+      let headRotation =
+        this.pointerX * 0.024
+        - slowSway * 0.005 * quietWeight
+        + idlePose.headRotation * behaviorWeight;
+      let headOffsetX =
+        this.pointerX * 7
+        + sharedSwayX
+        + idlePose.headX * behaviorWeight;
+      let headOffsetY =
+        this.pointerY * 2
+        + idlePose.headY * behaviorWeight;
+      let headScale = 1;
+      let bodyOffsetX = sharedSwayX + idlePose.bodyX * behaviorWeight;
+      let bodyOffsetY = idlePose.bodyY * behaviorWeight;
+      let bodyRotation =
+        slowSway * 0.003 * quietWeight
+        + idlePose.bodyRotation * behaviorWeight;
+      let sharedPoseY = 0;
+      let bodyScaleX =
+        (1 - breath * 0.28)
+        * lerp(1, idlePose.bodyScaleX, behaviorWeight);
+      let bodyScaleY =
+        (1 + breath)
+        * lerp(1, idlePose.bodyScaleY, behaviorWeight);
+      let leftArmRotation =
+        CHARACTER_RIGHT_ARM_MIRROR_ROTATION
+        + Math.sin(this.elapsed * 0.76) * 0.009 * quietWeight
+        + idlePose.leftArmDelta * behaviorWeight;
+      let rightArmRotation =
+        -Math.sin(this.elapsed * 0.76 + 0.35) * 0.009 * quietWeight
+        + idlePose.rightArmDelta * behaviorWeight;
+      let leftLegRotation =
+        Math.sin(this.elapsed * 0.58 + 0.3) * 0.004 * quietWeight
+        + idlePose.leftLegRotation * behaviorWeight;
+      let rightLegRotation =
+        -Math.sin(this.elapsed * 0.58 + 0.3) * 0.004 * quietWeight
+        + idlePose.rightLegRotation * behaviorWeight;
+      let antennaTarget =
+        -headRotation * 0.72
+        + Math.sin(this.elapsed * 0.84 + 0.9) * 0.012 * quietWeight
+        + idlePose.antennaRotation * behaviorWeight;
+
+      if (this.emotion === "happy") {
+        const response = this.emotionPulse;
+        headRotation += Math.sin(this.elapsed * 3.1) * 0.018 * response;
+        sharedPoseY -= Math.sin(response * Math.PI) * 4;
+        leftArmRotation += 0.035 + response * 0.04;
+        rightArmRotation -= 0.035 + response * 0.04;
+        antennaTarget += Math.sin(this.elapsed * 4.8) * 0.035 * response;
+      } else if (this.emotion === "sad") {
+        headRotation -= 0.035;
+        headOffsetY += 5;
+        bodyOffsetY += 2.5;
+        bodyScaleY -= 0.01;
+        leftArmRotation -= 0.08;
+        rightArmRotation += 0.08;
+        antennaTarget -= 0.05;
+      } else if (this.emotion === "angry") {
+        const response = this.emotionPulse;
+        headOffsetX += Math.sin(this.elapsed * 18) * 1.6 * response;
+        headRotation += Math.sin(this.elapsed * 14) * 0.006 * response;
+        leftArmRotation += 0.15;
+        rightArmRotation -= 0.15;
+        bodyOffsetY += 2;
+      } else if (this.emotion === "surprised") {
+        headScale += 0.02 + this.emotionPulse * 0.045;
+        sharedPoseY -= 2 + this.emotionPulse * 4;
+        leftArmRotation += 0.42 + this.emotionPulse * 0.5;
+        rightArmRotation -= 0.42 + this.emotionPulse * 0.5;
+        antennaTarget += 0.075;
+      } else if (this.emotion === "thinking") {
+        const thought = Math.sin(this.elapsed * 1.15);
+        headRotation -= 0.055 + thought * 0.01;
+        headOffsetX -= 4;
+        bodyOffsetX -= 3;
+        bodyOffsetY += 1;
+        rightArmRotation = -0.2 + thought * 0.018;
+        leftArmRotation += 0.045;
+        leftLegRotation -= 0.018;
+        rightLegRotation += 0.025;
+        bodyRotation += 0.014;
+        antennaTarget -= 0.03;
+      } else if (this.emotion === "confused") {
+        const questionTilt = Math.sin(this.elapsed * 1.45);
+        headRotation += questionTilt * 0.045;
+        leftArmRotation += 0.14 + questionTilt * 0.04;
+        rightArmRotation -= 0.14 + questionTilt * 0.04;
+        bodyRotation -= questionTilt * 0.008;
+        antennaTarget += questionTilt * 0.045;
       }
 
       if (this.elapsed < this.waveUntil) {
@@ -682,59 +902,78 @@
           0,
           1,
         );
-        const raiseProgress = clamp(waveProgress / 0.2, 0, 1);
-        const lowerProgress = clamp((1 - waveProgress) / 0.2, 0, 1);
-        const waveEnvelope =
-          Math.sin(Math.min(raiseProgress, lowerProgress) * Math.PI * 0.5);
+        const waveEnvelope = smoothStep(
+          Math.min(
+            clamp(waveProgress / 0.2, 0, 1),
+            clamp((1 - waveProgress) / 0.22, 0, 1),
+          ),
+        );
+        const wave = Math.sin(waveProgress * Math.PI * 6) * waveEnvelope;
         const raisedArmRotation =
           CHARACTER_RIGHT_ARM_MIRROR_ROTATION
-          + 1.68
-          + Math.sin(waveProgress * Math.PI * 4) * 0.1 * motionScale;
+          + 1.58
+          + wave * 0.12 * motionScale;
 
-        // Keep Komo's right thumb above the hand throughout the wave.
-        leftArmRotation += (raisedArmRotation - leftArmRotation) * waveEnvelope;
+        leftArmRotation = lerp(leftArmRotation, raisedArmRotation, waveEnvelope);
+        rightArmRotation -= 0.035 * waveEnvelope;
+        bodyOffsetX += 6 * waveEnvelope;
+        bodyOffsetY -= 2 * waveEnvelope;
+        bodyRotation -= 0.028 * waveEnvelope;
+        headOffsetX += 3 * waveEnvelope;
+        headOffsetY -= 2 * waveEnvelope;
+        headRotation += 0.045 * waveEnvelope - wave * 0.006;
+        leftLegRotation -= 0.025 * waveEnvelope;
+        rightLegRotation += 0.04 * waveEnvelope;
+        antennaTarget += wave * 0.06;
       }
 
-      headScale += this.emotionPulse * 0.016;
-      sharedPoseY -= Math.sin(this.emotionPulse * Math.PI) * 5;
+      headScale += this.emotionPulse * 0.014;
 
-      this.headRig.rotation = damp(this.headRig.rotation, headRotation, 8, deltaSeconds);
-      this.headRig.position.x = damp(this.headRig.position.x, 627 + headOffsetX, 9, deltaSeconds);
+      this.characterRig.position.x = damp(
+        this.characterRig.position.x,
+        characterOffsetX,
+        3.2,
+        deltaSeconds,
+      );
+      this.headRig.rotation = damp(this.headRig.rotation, headRotation, 7, deltaSeconds);
+      this.headRig.position.x = damp(this.headRig.position.x, 627 + headOffsetX, 8, deltaSeconds);
       this.headRig.position.y = damp(
         this.headRig.position.y,
         742 + sharedBobY + sharedPoseY + headOffsetY,
-        9,
+        8,
         deltaSeconds,
       );
-      this.headRig.scale.x = damp(this.headRig.scale.x, headScale, 9, deltaSeconds);
-      this.headRig.scale.y = damp(this.headRig.scale.y, headScale, 9, deltaSeconds);
+      this.headRig.scale.x = damp(this.headRig.scale.x, headScale, 8, deltaSeconds);
+      this.headRig.scale.y = damp(this.headRig.scale.y, headScale, 8, deltaSeconds);
 
       this.bodyRig.position.x = damp(
         this.bodyRig.position.x,
         627 + bodyOffsetX,
-        8,
+        7,
         deltaSeconds,
       );
       this.bodyRig.position.y = damp(
         this.bodyRig.position.y,
         755 + sharedBobY + sharedPoseY + bodyOffsetY,
-        9,
+        8,
         deltaSeconds,
       );
-      this.bodyRig.rotation = damp(this.bodyRig.rotation, bodyRotation, 8, deltaSeconds);
-      this.bodyRig.scale.x = damp(this.bodyRig.scale.x, bodyScaleX, 7, deltaSeconds);
-      this.bodyRig.scale.y = damp(this.bodyRig.scale.y, bodyScaleY, 7, deltaSeconds);
-      this.leftArmRig.rotation = damp(this.leftArmRig.rotation, leftArmRotation, 10, deltaSeconds);
-      this.rightArmRig.rotation = damp(this.rightArmRig.rotation, rightArmRotation, 10, deltaSeconds);
-      this.leftLegRig.rotation = damp(this.leftLegRig.rotation, leftLegRotation, 8, deltaSeconds);
-      this.rightLegRig.rotation = damp(this.rightLegRig.rotation, rightLegRotation, 8, deltaSeconds);
+      this.bodyRig.rotation = damp(this.bodyRig.rotation, bodyRotation, 7, deltaSeconds);
+      this.bodyRig.scale.x = damp(this.bodyRig.scale.x, bodyScaleX, 6, deltaSeconds);
+      this.bodyRig.scale.y = damp(this.bodyRig.scale.y, bodyScaleY, 6, deltaSeconds);
+      this.leftArmRig.rotation = damp(this.leftArmRig.rotation, leftArmRotation, 8, deltaSeconds);
+      this.rightArmRig.rotation = damp(this.rightArmRig.rotation, rightArmRotation, 8, deltaSeconds);
+      this.leftLegRig.rotation = damp(this.leftLegRig.rotation, leftLegRotation, 7, deltaSeconds);
+      this.rightLegRig.rotation = damp(this.rightLegRig.rotation, rightLegRotation, 7, deltaSeconds);
 
-      this.antennaVelocity += (antennaTarget - this.antennaRig.rotation) * 22 * deltaSeconds;
-      this.antennaVelocity *= Math.exp(-7 * deltaSeconds);
+      this.antennaVelocity += (antennaTarget - this.antennaRig.rotation) * 18 * deltaSeconds;
+      this.antennaVelocity *= Math.exp(-6.2 * deltaSeconds);
       this.antennaRig.rotation += this.antennaVelocity * deltaSeconds;
     }
-
     update(delta) {
+      if (!this.active) {
+        return;
+      }
       const deltaSeconds = clamp(delta / 60, 0, 0.05);
       this.elapsed += deltaSeconds;
       this.updateBlink();
@@ -766,6 +1005,27 @@
         this.mouthOpen = 0;
       }
       this.refreshFace(true);
+    }
+
+    setActive(value) {
+      const nextActive = Boolean(value);
+      if (this.active === nextActive) {
+        return;
+      }
+      this.active = nextActive;
+      this.pointerTargetX = 0;
+      this.pointerTargetY = 0;
+      if (nextActive) {
+        this.idleAction = {
+          name: "still",
+          startedAt: this.elapsed,
+          duration: 3.8,
+          direction: 1,
+          originX: this.stageOffsetX,
+          targetX: this.stageOffsetX,
+        };
+        this.refreshFace(true);
+      }
     }
 
     resize() {
@@ -806,7 +1066,7 @@
       this.startWave();
     }
 
-    startWave(duration = 1.1) {
+    startWave(duration = 2.4) {
       this.waveStartedAt = this.elapsed;
       this.waveUntil = this.elapsed + duration;
     }

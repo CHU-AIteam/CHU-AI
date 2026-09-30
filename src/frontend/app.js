@@ -244,11 +244,13 @@ function openTitleScreen({ resetChat = false } = {}) {
     resetChatState();
   }
   setPasswordError("");
+  avatarPuppet?.setActive(false);
   showScreen(screenTitle);
 }
 
 function openChatScreen() {
   showScreen(chatApp);
+  avatarPuppet?.setActive(true);
   noteUserActivity(true);
   window.requestAnimationFrame(() => {
     resizeAvatarPuppet();
@@ -347,6 +349,7 @@ async function initAvatarPuppet() {
     });
     avatarCard.dataset.loaded = "true";
     resizeAvatarPuppet();
+    avatarPuppet.setActive(isChatVisible());
     setAvatarEmotion(currentAvatarEmotion, "", { playMotion: false });
     window.addEventListener("resize", resizeAvatarPuppet);
   } catch (error) {
@@ -533,7 +536,7 @@ function resetChatState() {
   chatStateVersion += 1;
   exchangeHistory.length = 0;
   stopAvatarSpeaking();
-  setAvatarEmotion("happy", "chat");
+  setAvatarEmotion("neutral", "", { playMotion: false });
   setInputLocked(false);
   resetQuickQuestions();
   setStatus("");
