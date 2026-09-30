@@ -1,6 +1,6 @@
 # Chubu Commons AI
 
-Chubu Commons AI は、中部大学のコモンズ、施設、学食、学部学科、大学案内情報を案内するチャットアプリです。エージェント名は「コモ」です。
+Chubu Commons AI は、中部大学のコモンズ、施設、学食、学部学科、大学案内情報を案内するチャットアプリです。案内キャラクター名は「コモ」です。
 
 FastAPI バックエンドと静的フロントエンドを Docker で起動し、同じ `8000` 番ポートで配信します。知識検索は常に `search + hybrid` です。クライアントが `all` を送ってもバックエンドで `search` に強制します。
 
@@ -19,6 +19,20 @@ Browser / BIG PAD
 ログとフィードバックは `LOG_STORAGE_MODE=google_sheets` で Google Sheets に保存します。学校 Wi-Fi では外部 PostgreSQL の `5432` が塞がれることがあるため、HTTPS 経由の Google Sheets API を標準にしています。
 
 PostgreSQL 保存モードも残していますが、これはローカル検証や Google Sheets 障害時の保険です。Supabase 直結は推奨構成から外しています。
+
+## アバター
+
+フロントエンドは、許諾済みのテレビ型キャラクター「コモ」の画像を PixiJS の2Dパペットとして表示します。画像をランタイムマスクでテレビ頭、アンテナ、胴体、両腕、両脚へ分け、次の動作をブラウザ上で合成します。
+
+- 自動まばたき、呼吸、視線追従
+- 回答表示中の口パク
+- 周囲を見る、重心を移す、歩く、手を振るなど、強弱のある待機行動
+- ポインターへの視線追従と、コモに触れた時の全身リアクション
+- AI応答の `emotion` による表情切り替え
+
+待機行動は単純なランダム再生ではなく、静かな時間から小・中・大の動作を経て通常姿勢へ戻る流れで再生します。`prefers-reduced-motion` が有効な端末では動きを抑えます。
+
+`emotion` は `neutral`、`happy`、`sad`、`angry`、`surprised`、`thinking`、`confused` の7種類です。PixiJS本体と画像は `src/frontend/` からローカル配信するため、BIG PADが外部CDNへ接続できなくても動作します。
 
 ## 必要なもの
 
@@ -178,6 +192,15 @@ http://<起動PCのIPアドレス>:8000
 
 `127.0.0.1` は起動PC自身からしか使えません。Windows では TCP `8000` をファイアウォールで許可してください。
 
+## ブランチとリリース
+
+- `dev`: 開発内容の統合・確認先
+- `main`: 開発リポジトリ内のリリース候補
+- 公開リポジトリの `main`: 本番配布先
+- 機能ブランチ: 作業単位で作成し、最初に `dev` へマージ
+
+推奨する反映順序は、`機能ブランチ → dev → main → 公開リポジトリの main` です。`dev` で起動確認と主要機能の確認を終えてから `main` へ進めます。APIキーやService Account JSONなどの秘密情報は、どのブランチにもコミットしません。
+
 ## 保存先の切り替え
 
 標準は Google Sheets です。
@@ -262,7 +285,11 @@ CHU-AI/
     frontend/
       index.html
       style.css
+      komo-stage.css
       app.js
+      avatar-puppet.js
+      assets/avatar/komo/
+      vendor/pixi.min.js
 ```
 
 詳細な実装説明は [src/README.md](src/README.md) を参照してください。

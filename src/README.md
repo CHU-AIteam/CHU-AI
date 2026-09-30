@@ -1,6 +1,6 @@
 # Chubu Commons AI src
 
-`src` はBIG PADや学内端末で動かすChubu Commons AI本体です。エージェント名は「コモ」です。バックエンドはFastAPI、フロントエンドは静的HTML/CSS/JavaScriptです。
+`src` はBIG PADや学内端末で動かすChubu Commons AI本体です。案内キャラクター名は「コモ」です。バックエンドはFastAPI、フロントエンドは静的HTML/CSS/JavaScriptです。
 
 バックエンドがフロントエンドも配信するため、通常は `8000` 番ポートだけを開けば動きます。
 
@@ -21,8 +21,12 @@ src/
     knowledge/          回答に使うMarkdownナレッジ
   frontend/
     index.html          画面構造
-    style.css           画面デザイン
+    style.css           共通画面とチャットUIのデザイン
+    komo-stage.css      コモ表示領域とアバター演出
     app.js              画面制御、API通信、履歴生成
+    avatar-puppet.js    コモの2Dパペット制御
+    assets/avatar/      透過アバター画像
+    vendor/pixi.min.js  ローカル配信用PixiJS
 ```
 
 ## 全体構成
@@ -173,10 +177,22 @@ commons
 チャット画面:
 
 - 左側にチャット欄
-- 右側に使用方法
+- 右側にコモのアバター
 - よくある質問ボタンから定型質問を送信可能
+- 質問ボタンは回答後におすすめ質問へ差し替え
 - 回答中は思考中表示を出す
 - 一定時間操作がないとタイトル画面へ戻る
+
+アバター:
+
+- PixiJSでテレビ頭、アンテナ、胴体、両腕、両脚を独立制御する
+- 自動まばたき、呼吸、視線追従、重心移動、歩行、手振りを全身で表現する
+- 静かな時間、小さな動き、中程度の動き、大きな行動、通常姿勢への復帰を順序立てて行う
+- コモに触れると手振りを含むリアクションを返す
+- 回答のタイプ表示中は口パクする
+- `emotion` に応じて眉、目、口、頬、涙などを切り替える
+- OSやブラウザの `prefers-reduced-motion` 設定に応じて動きを抑える
+- 画像とPixiJSはローカル配信し、外部CDNへ依存しない
 
 ホーム復帰:
 
@@ -206,6 +222,8 @@ commons
 回答分類:
 
 - GeminiがJSONで `response_type` を返す
+- GeminiがJSONで `emotion` も返す
+- `emotion` は `neutral` / `happy` / `sad` / `angry` / `surprised` / `thinking` / `confused`
 - 事前分類ルーターが `direct` と高信頼度で判定した `chat` / `usage` はRAG検索をスキップする
 - 事前分類に失敗した場合、信頼度が低い場合、事実質問の可能性がある場合は必ずRAG検索する
 - `chat` は挨拶、雑談、感謝、励ましなどの会話として扱う

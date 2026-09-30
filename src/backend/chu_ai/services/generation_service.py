@@ -29,6 +29,25 @@ DEFAULT_RECOMMENDED_QUESTIONS = [
 VALID_RESPONSE_TYPES = {"chat", "knowledge", "unknown", "clarify", "usage"}
 """フロントエンドに返してよい回答分類"""
 
+VALID_EMOTIONS = {
+    "neutral",
+    "happy",
+    "sad",
+    "angry",
+    "surprised",
+    "thinking",
+    "confused",
+}
+"""アバターへ返してよい感情"""
+
+DEFAULT_EMOTION_BY_RESPONSE_TYPE = {
+    "chat": "happy",
+    "knowledge": "neutral",
+    "unknown": "sad",
+    "clarify": "confused",
+    "usage": "happy",
+}
+
 
 def normalize_bool(value, fallback: bool = False) -> bool:
     """Gemini JSON内の真偽値をboolへ正規化する関数"""
@@ -131,6 +150,16 @@ def normalize_can_answer_for_type(can_answer: bool, response_type: str) -> bool:
     return can_answer
 
 
+def normalize_emotion(value: object, response_type: str, has_error: bool = False) -> str:
+    """Gemini JSON内の感情をアバター向けの安全な値へ正規化する関数"""
+    if has_error:
+        return "confused"
+    emotion = str(value or "").strip().lower()
+    if emotion in VALID_EMOTIONS:
+        return emotion
+    return DEFAULT_EMOTION_BY_RESPONSE_TYPE.get(response_type, "neutral")
+
+
 def build_generation_result(raw_text: str, current_question: str) -> dict:
     """GeminiのJSON出力を画面表示用データへ変換する関数"""
     fallback_answer = (
@@ -143,10 +172,12 @@ def build_generation_result(raw_text: str, current_question: str) -> dict:
     try:
         data = extract_json_object(fallback_answer)
     except Exception:
+        fallback_response_type = normalize_response_type(None, fallback_can_answer)
         return {
             "answer": fallback_answer,
             "can_answer": fallback_can_answer,
-            "response_type": normalize_response_type(None, fallback_can_answer),
+            "response_type": fallback_response_type,
+            "emotion": normalize_emotion(None, fallback_response_type, error_type is not None),
             "recommended_questions": []
             if error_type is not None
             else normalize_recommended_questions([], current_question),
@@ -164,11 +195,13 @@ def build_generation_result(raw_text: str, current_question: str) -> dict:
         can_answer = False
     response_type = normalize_response_type(data.get("response_type"), can_answer)
     can_answer = normalize_can_answer_for_type(can_answer, response_type)
+    emotion = normalize_emotion(data.get("emotion"), response_type, error_type is not None)
 
     return {
         "answer": answer,
         "can_answer": can_answer,
         "response_type": response_type,
+        "emotion": emotion,
         "recommended_questions": normalize_recommended_questions(
             data.get("recommended_questions"),
             current_question,
