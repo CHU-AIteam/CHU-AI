@@ -26,8 +26,11 @@ PostgreSQL 保存モードも残していますが、これはローカル検証
 
 - 自動まばたき、呼吸、視線追従
 - 回答表示中の口パク
-- 腕振り、アンテナの揺れ、足の動き、クリック時のリアクション
+- 周囲を見る、重心を移す、歩く、手を振るなど、強弱のある待機行動
+- ポインターへの視線追従と、コモに触れた時の全身リアクション
 - AI応答の `emotion` による表情切り替え
+
+待機行動は単純なランダム再生ではなく、静かな時間から小・中・大の動作を経て通常姿勢へ戻る流れで再生します。`prefers-reduced-motion` が有効な端末では動きを抑えます。
 
 `emotion` は `neutral`、`happy`、`sad`、`angry`、`surprised`、`thinking`、`confused` の7種類です。PixiJS本体と画像は `src/frontend/` からローカル配信するため、BIG PADが外部CDNへ接続できなくても動作します。
 
@@ -189,6 +192,15 @@ http://<起動PCのIPアドレス>:8000
 
 `127.0.0.1` は起動PC自身からしか使えません。Windows では TCP `8000` をファイアウォールで許可してください。
 
+## ブランチとリリース
+
+- `dev`: 開発内容の統合・確認先
+- `main`: 開発リポジトリ内のリリース候補
+- 公開リポジトリの `main`: 本番配布先
+- 機能ブランチ: 作業単位で作成し、最初に `dev` へマージ
+
+推奨する反映順序は、`機能ブランチ → dev → main → 公開リポジトリの main` です。`dev` で起動確認と主要機能の確認を終えてから `main` へ進めます。APIキーやService Account JSONなどの秘密情報は、どのブランチにもコミットしません。
+
 ## 保存先の切り替え
 
 標準は Google Sheets です。
@@ -273,7 +285,11 @@ CHU-AI/
     frontend/
       index.html
       style.css
+      komo-stage.css
       app.js
+      avatar-puppet.js
+      assets/avatar/komo/
+      vendor/pixi.min.js
 ```
 
 詳細な実装説明は [src/README.md](src/README.md) を参照してください。
