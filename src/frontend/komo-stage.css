@@ -222,7 +222,6 @@
   right: 5%;
   bottom: 9%;
   padding: 9px 13px;
-  transform: rotate(-3deg);
   border: 2px solid rgba(36, 89, 189, 0.78);
   border-radius: 999px;
   color: var(--blue);
