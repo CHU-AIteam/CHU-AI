@@ -219,14 +219,19 @@
 .stage-touch-note {
   position: absolute;
   z-index: 3;
-  right: 8%;
-  bottom: 12%;
-  transform: rotate(-5deg);
+  right: 5%;
+  bottom: 9%;
+  padding: 9px 13px;
+  transform: rotate(-3deg);
+  border: 2px solid rgba(36, 89, 189, 0.78);
+  border-radius: 999px;
   color: var(--blue);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 7px 18px rgba(35, 70, 135, 0.14);
   font-size: clamp(0.9rem, 1.2vw, 1.15rem);
   font-weight: 900;
   letter-spacing: 0.02em;
-  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
 }
 
 .stage-touch-note span {
@@ -291,9 +296,10 @@
   }
 
   .stage-touch-note {
-    right: 6%;
-    bottom: 8%;
-    font-size: 0.9rem;
+    right: 4%;
+    bottom: 5%;
+    padding: 7px 10px;
+    font-size: 0.82rem;
   }
 }
 
