@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chubu Commons AI</title>
-    <link rel="stylesheet" href="./style.css?v=20260930-ui-03">
-    <link rel="stylesheet" href="./komo-stage.css?v=20260930-ui-04">
+    <link rel="stylesheet" href="./style.css?v=20261006-ui-01">
+    <link rel="stylesheet" href="./komo-stage.css?v=20261006-ui-01">
   </head>
   <body>
     <main class="screen" id="screen-password">
@@ -27,16 +27,6 @@
       </section>
     </main>
 
-    <main class="screen hidden" id="screen-title">
-      <section class="screen-card title-card">
-        <div class="title-mark" aria-hidden="true">K</div>
-        <p class="screen-label">CHUBU COMMONS AI</p>
-        <h1 class="screen-title">コモに聞いてみよう</h1>
-        <p class="screen-text">中部大学とコモンズのことを、気軽に相談できます。</p>
-        <button type="button" id="enter-chat" class="start-chat-button">会話をはじめる</button>
-      </section>
-    </main>
-
     <main class="app hidden" id="chat-app">
       <div class="app-shell">
         <header class="header">
@@ -49,7 +39,7 @@
           </div>
           <div class="header-actions">
             <div class="status" id="status" aria-live="polite"></div>
-            <button type="button" id="back-to-home" class="home-back-button" aria-label="ホームへ戻る">ホーム</button>
+            <button type="button" id="clear-chat" class="clear-chat-button">会話を消去</button>
           </div>
         </header>
 
@@ -101,11 +91,11 @@
           </aside>
         </div>
       </div>
-      <div id="home-return-warning" class="home-return-warning hidden" aria-live="polite"></div>
+      <div id="chat-reset-warning" class="chat-reset-warning hidden" aria-live="polite"></div>
     </main>
 
     <script src="./vendor/pixi.min.js"></script>
     <script src="./avatar-puppet.js?v=20260930-motion-01"></script>
-    <script src="./app.js?v=20260930-ui-02"></script>
+    <script src="./app.js?v=20261006-chat-reset-01"></script>
   </body>
 </html>

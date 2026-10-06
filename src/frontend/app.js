@@ -7,7 +7,7 @@ const API_URL = (() => {
 })();
 const HEALTH_URL = API_URL.replace(/\/chat$/, "/health");
 const FEEDBACK_URL = API_URL.replace(/\/chat$/, "/feedback");
-const DEFAULT_HOME_RETURN_SECONDS = 30;
+const DEFAULT_INACTIVITY_RESET_SECONDS = 30;
 const DEFAULT_HISTORY_MAX_EXCHANGES = 5;
 const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
 const TYPING_INTERVAL_MS = 18;
@@ -86,14 +86,12 @@ const INITIAL_QUICK_QUESTION_POOL = [
 ];
 
 const screenPassword = document.getElementById("screen-password");
-const screenTitle = document.getElementById("screen-title");
 const chatApp = document.getElementById("chat-app");
 const passwordForm = document.getElementById("password-form");
 const passwordInput = document.getElementById("password-input");
 const passwordError = document.getElementById("password-error");
-const enterChat = document.getElementById("enter-chat");
-const backToHome = document.getElementById("back-to-home");
-const homeReturnWarning = document.getElementById("home-return-warning");
+const clearChat = document.getElementById("clear-chat");
+const chatResetWarning = document.getElementById("chat-reset-warning");
 const form = document.getElementById("form");
 const question = document.getElementById("question");
 const send = document.getElementById("send");
@@ -109,12 +107,12 @@ const quickButtons = document.querySelectorAll(".quick-button");
 const exchangeHistory = [];
 
 let isInputLocked = false;
-let configuredHomeReturnSeconds = DEFAULT_HOME_RETURN_SECONDS;
+let configuredInactivityResetSeconds = DEFAULT_INACTIVITY_RESET_SECONDS;
 let configuredHistoryMaxExchanges = DEFAULT_HISTORY_MAX_EXCHANGES;
 let configuredHistoryWindowMs = DEFAULT_HISTORY_WINDOW_MINUTES * 60 * 1000;
-let homeReturnTimerId = null;
+let chatResetTimerId = null;
 let warningTickerId = null;
-let homeReturnDeadlineTs = 0;
+let chatResetDeadlineTs = 0;
 let lastActivityResetAt = 0;
 let chatStateVersion = 0;
 let lastEnterSubmitAt = 0;
@@ -133,7 +131,7 @@ const FEEDBACK_OPTIONS = [
 ];
 
 function showScreen(screenElement) {
-  [screenPassword, screenTitle, chatApp].forEach((element) => {
+  [screenPassword, chatApp].forEach((element) => {
     if (!element) {
       return;
     }
@@ -148,20 +146,20 @@ function setPasswordError(text) {
   passwordError.textContent = text;
 }
 
-function clearHomeReturnTimer() {
-  if (homeReturnTimerId === null) {
+function clearChatResetTimer() {
+  if (chatResetTimerId === null) {
     return;
   }
-  window.clearTimeout(homeReturnTimerId);
-  homeReturnTimerId = null;
+  window.clearTimeout(chatResetTimerId);
+  chatResetTimerId = null;
 }
 
-function hideHomeReturnWarning() {
-  if (!homeReturnWarning) {
+function hideChatResetWarning() {
+  if (!chatResetWarning) {
     return;
   }
-  homeReturnWarning.classList.add("hidden");
-  homeReturnWarning.textContent = "";
+  chatResetWarning.classList.add("hidden");
+  chatResetWarning.textContent = "";
 }
 
 function clearWarningTicker(resetDeadline = true) {
@@ -170,58 +168,60 @@ function clearWarningTicker(resetDeadline = true) {
     warningTickerId = null;
   }
   if (resetDeadline) {
-    homeReturnDeadlineTs = 0;
+    chatResetDeadlineTs = 0;
   }
-  hideHomeReturnWarning();
+  hideChatResetWarning();
 }
 
 function isChatVisible() {
   return Boolean(chatApp) && !chatApp.classList.contains("hidden");
 }
 
-function getHomeReturnMs() {
-  return configuredHomeReturnSeconds * 1000;
+function getInactivityResetMs() {
+  return configuredInactivityResetSeconds * 1000;
 }
 
-function updateHomeReturnWarning() {
-  if (!homeReturnWarning || !isChatVisible() || homeReturnDeadlineTs <= 0) {
-    hideHomeReturnWarning();
+function updateChatResetWarning() {
+  if (!chatResetWarning || !isChatVisible() || chatResetDeadlineTs <= 0) {
+    hideChatResetWarning();
     return;
   }
 
-  const remainMs = homeReturnDeadlineTs - Date.now();
+  const remainMs = chatResetDeadlineTs - Date.now();
   if (remainMs <= 0) {
-    hideHomeReturnWarning();
+    hideChatResetWarning();
     return;
   }
 
   const remainSeconds = Math.ceil(remainMs / 1000);
   if (remainSeconds <= 10) {
-    homeReturnWarning.classList.remove("hidden");
-    homeReturnWarning.textContent = `ホームに戻ります...(${remainSeconds})`;
+    chatResetWarning.classList.remove("hidden");
+    chatResetWarning.textContent = `会話をリセットします...(${remainSeconds})`;
     return;
   }
 
-  hideHomeReturnWarning();
+  hideChatResetWarning();
 }
 
 function startWarningTicker() {
   clearWarningTicker(false);
-  warningTickerId = window.setInterval(updateHomeReturnWarning, 250);
-  updateHomeReturnWarning();
+  warningTickerId = window.setInterval(updateChatResetWarning, 250);
+  updateChatResetWarning();
 }
 
-function scheduleReturnToHome() {
-  clearHomeReturnTimer();
-  const returnAfterMs = getHomeReturnMs();
-  homeReturnDeadlineTs = Date.now() + returnAfterMs;
+function scheduleChatReset() {
+  clearChatResetTimer();
+  const resetAfterMs = getInactivityResetMs();
+  chatResetDeadlineTs = Date.now() + resetAfterMs;
   startWarningTicker();
-  homeReturnTimerId = window.setTimeout(() => {
+  chatResetTimerId = window.setTimeout(() => {
+    chatResetTimerId = null;
     if (!isChatVisible()) {
       return;
     }
-    openTitleScreen({ resetChat: true });
-  }, returnAfterMs);
+    clearWarningTicker();
+    resetChatState();
+  }, resetAfterMs);
 }
 
 function noteUserActivity(force = false) {
@@ -234,18 +234,7 @@ function noteUserActivity(force = false) {
     return;
   }
   lastActivityResetAt = now;
-  scheduleReturnToHome();
-}
-
-function openTitleScreen({ resetChat = false } = {}) {
-  clearHomeReturnTimer();
-  clearWarningTicker();
-  if (resetChat) {
-    resetChatState();
-  }
-  setPasswordError("");
-  avatarPuppet?.setActive(false);
-  showScreen(screenTitle);
+  scheduleChatReset();
 }
 
 function openChatScreen() {
@@ -821,7 +810,7 @@ async function loadRuntimeSettings() {
     const data = await response.json();
     const candidate = Number.parseInt(data.home_return_seconds, 10);
     if (Number.isFinite(candidate) && candidate > 0) {
-      configuredHomeReturnSeconds = candidate;
+      configuredInactivityResetSeconds = candidate;
     }
 
     const historyMax = Number.parseInt(data.chat_history_max_exchanges, 10);
@@ -938,7 +927,8 @@ function bindEvents() {
         if (passwordInput) {
           passwordInput.value = "";
         }
-        openTitleScreen();
+        setPasswordError("");
+        openChatScreen();
         return;
       }
       setPasswordError("パスワードが違います。");
@@ -948,15 +938,13 @@ function bindEvents() {
     });
   }
 
-  if (enterChat) {
-    enterChat.addEventListener("click", () => {
-      openChatScreen();
-    });
-  }
-
-  if (backToHome) {
-    backToHome.addEventListener("click", () => {
-      openTitleScreen({ resetChat: true });
+  if (clearChat) {
+    clearChat.addEventListener("click", () => {
+      clearChatResetTimer();
+      clearWarningTicker();
+      resetChatState();
+      noteUserActivity(true);
+      question?.focus();
     });
   }
 

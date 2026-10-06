@@ -112,7 +112,7 @@ def startup_log() -> None:
     print("Chubu Commons AI runtime settings:")
     print(f"  Knowledge mode: {FORCED_KNOWLEDGE_MODE} (forced)")
     print(f"  Search backend: {FORCED_SEARCH_BACKEND} (forced)")
-    print(f"  Home return:    {HOME_RETURN_SECONDS}s")
+    print(f"  Chat reset:     {HOME_RETURN_SECONDS}s")
     print(
         "  Chat history:   "
         f"{CHAT_HISTORY_MAX_EXCHANGES} exchanges / {CHAT_HISTORY_WINDOW_MINUTES:g} min"
