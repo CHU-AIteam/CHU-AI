@@ -9,7 +9,7 @@
   width: min(100%, 1720px);
   height: 100%;
   margin: 0 auto;
-  grid-template-rows: 76px minmax(0, 1fr);
+  grid-template-rows: 96px minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(203, 213, 226, 0.92);
   border-radius: 26px;
@@ -35,33 +35,25 @@
 }
 
 .brand-lockup {
-  gap: 12px;
-}
-
-.brand-symbol {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 12px;
-  color: #fff;
-  background: var(--blue);
-  font-size: 1rem;
-  font-weight: 900;
-}
-
-.label {
-  margin-bottom: 2px;
-  color: var(--teal);
-  font-size: 0.61rem;
-  font-weight: 800;
-  letter-spacing: 0.13em;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
 }
 
 .chat-title {
-  font-size: 1.2rem;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
+  color: var(--blue-dark);
+  font-size: clamp(2.05rem, 2.8vw, 2.55rem);
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+
+.chat-subtitle {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .header-actions {
@@ -265,7 +257,7 @@
     height: auto;
     border: 0;
     border-radius: 0;
-    grid-template-rows: 68px auto;
+    grid-template-rows: 82px auto;
   }
 
   .header {
@@ -303,18 +295,13 @@
 }
 
 @media (max-width: 520px) {
-  .label {
-    display: none;
-  }
-
-  .brand-symbol {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-  }
-
   .chat-title {
-    font-size: 1.05rem;
+    font-size: 1.7rem;
+  }
+
+  .chat-subtitle {
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
   }
 
   .status {
@@ -331,7 +318,7 @@
   }
 
   .app-shell {
-    grid-template-rows: 64px minmax(0, 1fr);
+    grid-template-rows: 80px minmax(0, 1fr);
     border-radius: 20px;
   }
 
