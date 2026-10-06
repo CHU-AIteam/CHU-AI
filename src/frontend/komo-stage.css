@@ -9,7 +9,7 @@
   width: min(100%, 1720px);
   height: 100%;
   margin: 0 auto;
-  grid-template-rows: 96px minmax(0, 1fr);
+  grid-template-rows: 118px minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(203, 213, 226, 0.92);
   border-radius: 26px;
@@ -43,7 +43,7 @@
 
 .chat-title {
   color: var(--blue-dark);
-  font-size: clamp(2.05rem, 2.8vw, 2.55rem);
+  font-size: clamp(2.8rem, 3.7vw, 3.55rem);
   font-weight: 900;
   line-height: 0.98;
   letter-spacing: -0.045em;
@@ -257,7 +257,7 @@
     height: auto;
     border: 0;
     border-radius: 0;
-    grid-template-rows: 82px auto;
+    grid-template-rows: 100px auto;
   }
 
   .header {
@@ -296,7 +296,7 @@
 
 @media (max-width: 520px) {
   .chat-title {
-    font-size: 1.7rem;
+    font-size: 2.25rem;
   }
 
   .chat-subtitle {
@@ -318,7 +318,7 @@
   }
 
   .app-shell {
-    grid-template-rows: 80px minmax(0, 1fr);
+    grid-template-rows: 96px minmax(0, 1fr);
     border-radius: 20px;
   }
 
