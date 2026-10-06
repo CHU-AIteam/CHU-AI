@@ -83,12 +83,12 @@ echo
 echo "Runtime settings:"
 echo "  Knowledge mode: ${KNOWLEDGE_MODE_EFFECTIVE}"
 echo "  Search backend: ${SEARCH_BACKEND_EFFECTIVE}"
-echo "  Home return:    ${HOME_RETURN_SECONDS_EFFECTIVE}s"
+echo "  Chat reset:     ${HOME_RETURN_SECONDS_EFFECTIVE}s"
 echo
 echo "How to change settings:"
 echo "  Default knowledge mode: src/.env の KNOWLEDGE_MODE_DEFAULT=search|all を変更して再起動"
 echo "  Per request mode:       API body の knowledge_mode=search|all"
-echo "  Home return seconds:    src/.env の HOME_RETURN_SECONDS を変更して再起動"
+echo "  Chat reset seconds:     src/.env の HOME_RETURN_SECONDS を変更して再起動"
 echo "========================================"
 echo
 

@@ -157,7 +157,7 @@ HYBRID_RRF_K = get_positive_int_env("HYBRID_RRF_K", 60)
 """RRF統合で使う安定化係数"""
 
 HOME_RETURN_SECONDS_DEFAULT = 30
-"""チャット画面からホームへ戻るまでの既定秒数"""
+"""無操作時にチャット内容をリセットするまでの既定秒数（環境変数名は互換性のため維持）"""
 
 HOME_RETURN_SECONDS = get_positive_int_env(
     "HOME_RETURN_SECONDS", HOME_RETURN_SECONDS_DEFAULT
