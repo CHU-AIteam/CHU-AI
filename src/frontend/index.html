@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chubu Commons AI</title>
-    <link rel="stylesheet" href="./style.css?v=20261006-ui-01">
-    <link rel="stylesheet" href="./komo-stage.css?v=20261006-ui-05">
+    <link rel="stylesheet" href="./style.css?v=20261007-questions-01">
+    <link rel="stylesheet" href="./komo-stage.css?v=20261007-super-04">
   </head>
   <body>
     <main class="screen" id="screen-password">
@@ -35,6 +35,17 @@
             <p class="chat-subtitle">中部大学・コモンズ案内</p>
           </div>
           <div class="header-actions">
+            <aside class="omikuji-tally" aria-label="このブラウザでのおみくじ集計">
+              <p class="omikuji-tally-heading"><span class="omikuji-tally-label">当たり回数</span> <span id="omikuji-total-count">0回</span></p>
+              <dl class="omikuji-tally-list">
+                <div class="omikuji-tally-secret"><dt>？？？</dt><dd data-fortune-count="super-daikichi">0</dd></div>
+                <div><dt>大吉</dt><dd data-fortune-count="daikichi">0</dd></div>
+                <div><dt>吉</dt><dd data-fortune-count="kichi">0</dd></div>
+                <div><dt>中吉</dt><dd data-fortune-count="chukichi">0</dd></div>
+                <div><dt>小吉</dt><dd data-fortune-count="shokichi">0</dd></div>
+                <div><dt>末吉</dt><dd data-fortune-count="suekichi">0</dd></div>
+              </dl>
+            </aside>
             <div class="status" id="status" aria-live="polite"></div>
             <button type="button" id="clear-chat" class="clear-chat-button">会話を消去</button>
           </div>
@@ -62,6 +73,9 @@
                 <button type="button" class="quick-button">中部大学とは？</button>
                 <button type="button" class="quick-button">コモンズとは？</button>
                 <button type="button" class="quick-button">食堂について教えて</button>
+                <button type="button" class="quick-button">どんな学部がある？</button>
+                <button type="button" class="quick-button">クラブ・サークルについて教えて</button>
+                <button type="button" class="quick-button">アクセスを教えて</button>
               </div>
 
               <form class="form" id="form">
@@ -82,8 +96,53 @@
               <div class="avatar-stage" id="avatar-stage">
                 <canvas id="avatar-canvas"></canvas>
                 <div class="avatar-fallback" id="avatar-fallback" role="status">コモを準備中...</div>
+                <p class="stage-touch-note"><span aria-hidden="true">✦</span> コモに触ってみよう！</p>
               </div>
-              <p class="stage-touch-note"><span aria-hidden="true">✦</span> コモに触ってみよう！</p>
+              <section class="omikuji" id="omikuji" data-phase="ready" aria-labelledby="omikuji-title">
+                <button type="button" class="omikuji-machine" id="omikuji-machine" aria-label="六角筒のおみくじを引く">
+                  <svg class="omikuji-illustration" viewBox="0 0 174 218" aria-hidden="true">
+                    <defs>
+                      <clipPath id="omikuji-paper-clip"><rect x="55" y="-12" width="70" height="80"/></clipPath>
+                    </defs>
+                    <ellipse cx="87" cy="205" rx="59" ry="7" fill="#785623" opacity=".12"/>
+                    <g class="omikuji-cylinder">
+                      <path d="M28 69 62 51h50l34 18-34 18H62Z" fill="#efdab6" stroke="#a4773e" stroke-width="1.5" stroke-linejoin="round"/>
+                      <path d="m58 68 7-5h44l7 5-7 5H65Z" fill="#715334"/>
+                      <g clip-path="url(#omikuji-paper-clip)">
+                        <g class="omikuji-paper">
+                          <rect x="60" y="-6" width="54" height="110" rx="2" fill="#fffdf7" stroke="#c6a978" stroke-width="1.2"/>
+                          <path d="M65-1h44v99H65Z" fill="none" stroke="#e3cfaa" stroke-width=".7"/>
+                          <text x="87" y="13" class="omikuji-slip-caption" text-anchor="middle">コモくじ</text>
+                          <text x="87" y="43" id="omikuji-slip-rank" class="omikuji-slip-rank" text-anchor="middle"></text>
+                          <path d="M74 53h26" stroke="#c6a978" stroke-width="1"/>
+                        </g>
+                      </g>
+                      <path d="m28 69 34 18v111l-34-18Z" fill="#c39354" stroke="#a4773e" stroke-width="1.5" stroke-linejoin="round"/>
+                      <path d="M62 87h50v111H62Z" fill="#ead0a4" stroke="#a4773e" stroke-width="1.5" stroke-linejoin="round"/>
+                      <path d="m112 87 34-18v111l-34 18Z" fill="#d9b47d" stroke="#a4773e" stroke-width="1.5" stroke-linejoin="round"/>
+                      <path d="m32 82 25 13m-25 73 25 13m60-86 25-13m-25 99 25-13M67 92v101m40-101v101" fill="none" stroke="#a4773e" stroke-width="1" opacity=".35"/>
+                      <rect x="73" y="105" width="28" height="75" rx="3" fill="#a65b46"/>
+                      <text x="87" y="125" class="omikuji-cylinder-label" text-anchor="middle"><tspan x="87">お</tspan><tspan x="87" dy="16">み</tspan><tspan x="87" dy="16">く</tspan><tspan x="87" dy="16">じ</tspan></text>
+                      <path d="M62 192h50m-81-18 28 15m56 0 28-15" stroke="#a4773e" stroke-width="1.5" fill="none"/>
+                    </g>
+                  </svg>
+                </button>
+                <div class="omikuji-copy">
+                  <div class="omikuji-heading">
+                    <h2 id="omikuji-title">コモのおみくじ</h2>
+                  </div>
+                  <div class="omikuji-result" id="omikuji-result" role="status" aria-live="polite" aria-atomic="true">
+                    <span class="omikuji-rank" id="omikuji-rank"></span>
+                    <p class="omikuji-message" id="omikuji-message">六角筒から、あなたへの一枚。コモと一緒に引いてみよう。</p>
+                  </div>
+                  <button type="button" id="omikuji-draw" class="omikuji-draw" aria-label="コモのおみくじを引く">
+                    <span id="omikuji-draw-label">引く</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M5 12h14m-5-5 5 5-5 5"/>
+                    </svg>
+                  </button>
+                </div>
+              </section>
             </section>
           </aside>
         </div>
@@ -91,8 +150,35 @@
       <div id="chat-reset-warning" class="chat-reset-warning hidden" aria-live="polite"></div>
     </main>
 
+    <div class="fortune-celebration" id="fortune-celebration" hidden aria-hidden="true">
+      <div class="fortune-charge"></div>
+      <div class="fortune-bloom"></div>
+      <div class="fortune-aurora"></div>
+      <div class="fortune-corona"></div>
+      <div class="fortune-rings"><i></i><i></i><i></i></div>
+      <div class="fortune-particles"></div>
+      <div class="fortune-fireworks fortune-fireworks-encore"></div>
+      <div class="fortune-fireworks fortune-fireworks-finale"></div>
+      <div class="fortune-award">
+        <svg class="fortune-crown" viewBox="0 0 120 78" aria-hidden="true">
+          <path d="m10 22 27 16L60 8l23 30 27-16-12 45H22Z" fill="#f8cf57" stroke="#b47a14" stroke-width="3" stroke-linejoin="round"/>
+          <path d="M25 59h70v12H25Z" fill="#f3b834" stroke="#b47a14" stroke-width="3"/>
+          <path d="m60 36 8 10-8 10-8-10Z" fill="#fff6cf"/>
+          <circle cx="10" cy="18" r="5" fill="#fff3a4"/><circle cx="60" cy="6" r="5" fill="#fff3a4"/><circle cx="110" cy="18" r="5" fill="#fff3a4"/>
+        </svg>
+        <p class="fortune-award-kicker">✦ 超レアおみくじ、大当たり！ ✦</p>
+        <p class="fortune-award-title"></p>
+        <p class="fortune-award-jackpot">SUPER JACKPOT</p>
+        <p class="fortune-award-message"></p>
+        <p class="fortune-award-note">この一枚に出会えたあなたへ、コモから大きな拍手！</p>
+      </div>
+    </div>
+
     <script src="./vendor/pixi.min.js"></script>
-    <script src="./avatar-puppet.js?v=20260930-motion-01"></script>
-    <script src="./app.js?v=20261006-chat-reset-01"></script>
+    <script src="./avatar-puppet.js?v=20261007-super-03"></script>
+    <script src="./omikuji.js?v=20261007-super-01"></script>
+    <script src="./omikuji-tally.js?v=20261007-tally-01"></script>
+    <script src="./omikuji-celebration.js?v=20261007-super-04"></script>
+    <script src="./app.js?v=20261007-super-04"></script>
   </body>
 </html>

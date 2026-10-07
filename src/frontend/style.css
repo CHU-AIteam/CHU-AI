@@ -238,20 +238,15 @@ h2 {
 }
 
 .quick-buttons {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  overflow-x: auto;
   padding-bottom: 12px;
-  scrollbar-width: none;
-}
-
-.quick-buttons::-webkit-scrollbar {
-  display: none;
 }
 
 .quick-button {
-  flex: 1 0 auto;
-  min-height: 48px;
+  min-width: 0;
+  min-height: 60px;
   padding: 11px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -260,6 +255,7 @@ h2 {
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.35;
+  overflow-wrap: anywhere;
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 
@@ -464,11 +460,6 @@ h2 {
 
   .message {
     max-width: 92%;
-  }
-
-  .quick-button {
-    flex: 0 0 auto;
-    min-width: 180px;
   }
 
   #send {

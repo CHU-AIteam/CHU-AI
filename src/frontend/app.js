@@ -103,6 +103,39 @@ const avatarStage = document.getElementById("avatar-stage");
 const avatarCanvas = document.getElementById("avatar-canvas");
 const avatarFallback = document.getElementById("avatar-fallback");
 const avatarState = document.getElementById("avatar-state");
+const omikuji = document.getElementById("omikuji");
+const omikujiMachine = document.getElementById("omikuji-machine");
+const omikujiDraw = document.getElementById("omikuji-draw");
+const omikujiDrawLabel = document.getElementById("omikuji-draw-label");
+const omikujiRank = document.getElementById("omikuji-rank");
+const omikujiSlipRank = document.getElementById("omikuji-slip-rank");
+const omikujiMessage = document.getElementById("omikuji-message");
+const omikujiTotalCount = document.getElementById("omikuji-total-count");
+const omikujiTallyElement = document.querySelector(".omikuji-tally");
+const omikujiTallyLabel = document.querySelector(".omikuji-tally-label");
+const omikujiCountNodes = new Map(Array.from(
+  document.querySelectorAll("[data-fortune-count]"),
+  (node) => [node.dataset.fortuneCount, node],
+));
+// Live variables backed by one small localStorage snapshot, independent of chat resets.
+const omikujiCounts = Object.fromEntries(Array.from(omikujiCountNodes.keys(), (id) => [id, 0]));
+let omikujiDrawCount = 0;
+const omikujiTally = new window.ComoFortuneTally(omikujiCountNodes.keys(), {
+  onChange: ({ counts, total, persistent }) => {
+    Object.assign(omikujiCounts, counts);
+    omikujiDrawCount = total;
+    for (const [id, node] of omikujiCountNodes) node.textContent = String(counts[id]);
+    omikujiTotalCount.textContent = `${total}回`;
+    omikujiTallyLabel.textContent = persistent ? "当たり回数" : "集計（未保存）";
+    omikujiTallyElement.title = persistent
+      ? "このブラウザに保存されます。同じURLなら再読み込み・サーバー再起動後も保持します。"
+      : "ブラウザの保存領域が利用できません。現在の回数は再読み込みで消えます。";
+    omikujiTallyElement.dataset.persistent = String(persistent);
+  },
+});
+const omikujiCelebration = new window.ComoFortuneCelebration(
+  document.getElementById("fortune-celebration"),
+);
 const quickButtons = document.querySelectorAll(".quick-button");
 const exchangeHistory = [];
 
@@ -121,6 +154,7 @@ let currentInitialQuickQuestions = [];
 let avatarPuppet = null;
 let currentAvatarEmotion = "neutral";
 let avatarSpeaking = false;
+let omikujiTimerId = null;
 
 const FEEDBACK_OPTIONS = [
   { value: "knowledge_missing", label: "知識がない" },
@@ -453,6 +487,9 @@ function resetQuickQuestions() {
     currentInitialQuickQuestions,
   );
   setQuickQuestionLabels(currentInitialQuickQuestions);
+  quickButtons.forEach((button) => {
+    button.classList.remove("quick-button-fetching", "quick-button-fetched");
+  });
 }
 
 function renderRecommendedQuestions(questions, canAnswer) {
@@ -468,19 +505,47 @@ function renderRecommendedQuestions(questions, canAnswer) {
     return;
   }
 
+  // Keep a second row of familiar questions alongside the three API suggestions.
+  const seenQuestions = new Set(normalizedQuestions);
+  const familiarQuestions = [
+    ...currentInitialQuickQuestions.slice(3),
+    ...currentInitialQuickQuestions,
+    ...INITIAL_QUICK_QUESTION_POOL,
+  ].filter((text) => {
+    if (seenQuestions.has(text)) {
+      return false;
+    }
+    seenQuestions.add(text);
+    return true;
+  }).slice(0, Math.max(0, quickButtons.length - normalizedQuestions.length));
+  const labels = [...normalizedQuestions, ...familiarQuestions];
+  const currentStateVersion = chatStateVersion;
+
   quickButtons.forEach((button, index) => {
+    if (button.textContent === labels[index]) {
+      return;
+    }
     button.style.setProperty("--quick-index", index);
     button.classList.remove("quick-button-fetched");
     button.classList.add("quick-button-fetching");
   });
 
   window.setTimeout(() => {
-    setQuickQuestionLabels(normalizedQuestions);
+    if (currentStateVersion !== chatStateVersion) {
+      return;
+    }
+    setQuickQuestionLabels(labels);
     quickButtons.forEach((button) => {
+      if (!button.classList.contains("quick-button-fetching")) {
+        return;
+      }
       button.classList.remove("quick-button-fetching");
       button.classList.add("quick-button-fetched");
     });
     window.setTimeout(() => {
+      if (currentStateVersion !== chatStateVersion) {
+        return;
+      }
       quickButtons.forEach((button) => {
         button.classList.remove("quick-button-fetched");
       });
@@ -524,6 +589,7 @@ function sleep(ms) {
 function resetChatState() {
   chatStateVersion += 1;
   exchangeHistory.length = 0;
+  resetOmikuji();
   stopAvatarSpeaking();
   setAvatarEmotion("neutral", "", { playMotion: false });
   setInputLocked(false);
@@ -536,6 +602,106 @@ function resetChatState() {
     messageList.innerHTML = "";
     addMessage(BOT_NAME, INITIAL_BOT_MESSAGE, "bot");
   }
+}
+
+function resetOmikuji() {
+  omikujiCelebration.cancel();
+  if (omikujiTimerId !== null) {
+    window.clearTimeout(omikujiTimerId);
+    omikujiTimerId = null;
+  }
+  avatarPuppet?.cancelFortuneMotion();
+  if (!omikuji) {
+    return;
+  }
+  omikuji.dataset.phase = "ready";
+  delete omikuji.dataset.fortune;
+  omikujiDraw.disabled = false;
+  omikujiMachine.disabled = false;
+  omikujiDrawLabel.textContent = "引く";
+  omikujiRank.textContent = "";
+  omikujiSlipRank.textContent = "";
+  omikujiMessage.textContent = "六角筒から、あなたへの一枚。コモと一緒に引いてみよう。";
+}
+
+function drawOmikuji() {
+  if (!isChatVisible() || omikujiTimerId !== null || omikuji.dataset.phase === "charging" || !window.ComoOmikuji) {
+    return;
+  }
+  noteUserActivity(true);
+  omikujiCelebration.cancel();
+  const result = window.ComoOmikuji.draw();
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const drawDurationMs = reduceMotion ? 220 : 2000;
+  omikuji.dataset.phase = "drawing";
+  delete omikuji.dataset.fortune;
+  omikujiDraw.disabled = true;
+  omikujiMachine.disabled = true;
+  omikujiDrawLabel.textContent = "抽選中";
+  omikujiRank.textContent = "";
+  omikujiSlipRank.textContent = "";
+  omikujiMessage.textContent = "抽選中...";
+  // Drawing a fortune remains available during chat; conversation motion takes priority.
+  if (!isInputLocked) {
+    avatarPuppet?.playFortuneMotion("draw", { duration: drawDurationMs / 1000 });
+  }
+  omikujiTimerId = window.setTimeout(() => {
+    omikujiTimerId = null;
+    if (result.isSuperRare) {
+      omikuji.dataset.phase = "charging";
+      omikujiMessage.textContent = "…あれ？ この光は…！";
+      omikujiCelebration.play(result, {
+        reduceMotion,
+        onReveal: () => revealOmikuji(result),
+        onReaction: () => {
+          if (!isInputLocked) {
+            avatarPuppet?.playFortuneMotion("super", { duration: reduceMotion ? 0.8 : 3.8 });
+          }
+        },
+        onEncore: () => {
+          if (!isInputLocked) {
+            avatarPuppet?.playFortuneMotion("super", { duration: 4.6, encore: true });
+          }
+        },
+      });
+    } else {
+      revealOmikuji(result);
+      if (!isInputLocked) {
+        avatarPuppet?.playFortuneMotion("reveal", { celebrate: result.id === "daikichi" });
+      }
+    }
+  }, drawDurationMs);
+}
+
+function revealOmikuji(result) {
+  if (omikuji.dataset.phase !== "drawing" && omikuji.dataset.phase !== "charging") {
+    return;
+  }
+  if (omikujiCountNodes.has(result.id)) {
+    omikujiTally.record(result.id);
+  }
+  omikuji.dataset.fortune = result.id;
+  omikujiRank.textContent = result.label;
+  if (result.isSuperRare) {
+    // Two lines keep the full special name legible on the narrow paper slip.
+    const lines = [["スーパー", 24, 11], ["超大吉", 43, 17]].map(([label, y, size]) => {
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+      line.setAttribute("x", "87");
+      line.setAttribute("y", String(y));
+      line.setAttribute("font-size", String(size));
+      line.textContent = label;
+      return line;
+    });
+    omikujiSlipRank.replaceChildren(...lines);
+  } else {
+    omikujiSlipRank.textContent = result.label;
+  }
+  omikujiMessage.textContent = result.message;
+  omikuji.dataset.phase = "revealed";
+  omikujiDraw.disabled = false;
+  omikujiMachine.disabled = false;
+  omikujiDrawLabel.textContent = "もう一度";
+  noteUserActivity(true);
 }
 
 async function typeMessage(name, text, type, shouldContinue = () => true) {
@@ -919,6 +1085,8 @@ async function sendQuestion(text) {
 }
 
 function bindEvents() {
+  omikujiDraw?.addEventListener("click", drawOmikuji);
+  omikujiMachine?.addEventListener("click", drawOmikuji);
   if (passwordForm) {
     passwordForm.addEventListener("submit", (event) => {
       event.preventDefault();
