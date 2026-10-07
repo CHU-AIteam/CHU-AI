@@ -66,6 +66,29 @@
     return normalized * normalized * normalized * (normalized * (normalized * 6 - 15) + 10);
   }
 
+  function createPose(characterX) {
+    return {
+      characterX,
+      characterY: 0,
+      headX: 0,
+      headY: 0,
+      headRotation: 0,
+      headScale: 1,
+      bodyX: 0,
+      bodyY: 0,
+      bodyRotation: 0,
+      bodyScaleX: 1,
+      bodyScaleY: 1,
+      leftArmDelta: 0,
+      rightArmDelta: 0,
+      leftLegRotation: 0,
+      rightLegRotation: 0,
+      antennaRotation: 0,
+      gazeX: 0,
+      gazeY: 0,
+    };
+  }
+
   async function loadTexture(url) {
     if (typeof window.PIXI.Texture.fromURL === "function") {
       return window.PIXI.Texture.fromURL(url);
@@ -119,6 +142,7 @@
       this.emotionPulse = 0;
       this.waveStartedAt = 0;
       this.waveUntil = 0;
+      this.fortuneMotion = null;
       this.pointerX = 0;
       this.pointerY = 0;
       this.pointerTargetX = 0;
@@ -648,24 +672,7 @@
         ),
       );
       const direction = action.direction;
-      const pose = {
-        characterX: this.stageOffsetX,
-        headX: 0,
-        headY: 0,
-        headRotation: 0,
-        bodyX: 0,
-        bodyY: 0,
-        bodyRotation: 0,
-        bodyScaleX: 1,
-        bodyScaleY: 1,
-        leftArmDelta: 0,
-        rightArmDelta: 0,
-        leftLegRotation: 0,
-        rightLegRotation: 0,
-        antennaRotation: 0,
-        gazeX: 0,
-        gazeY: 0,
-      };
+      const pose = createPose(this.stageOffsetX);
 
       if (action.name === "glance") {
         pose.gazeX = direction * 0.72 * envelope;
@@ -737,12 +744,140 @@
       return pose;
     }
 
+    getFortunePose() {
+      const motion = this.fortuneMotion;
+      if (!motion) {
+        return null;
+      }
+      const progress = clamp((this.elapsed - motion.startedAt) / motion.duration, 0, 1);
+      // Hold the attentive pose until the UI reveals the slip, without a neutral gap.
+      if (progress >= 1 && motion.kind !== "draw") {
+        this.cancelFortuneMotion();
+        return null;
+      }
+      const pose = createPose(this.stageOffsetX);
+
+      if (motion.kind === "draw") {
+        // Look down toward the cylinder first, then let the torso and weight follow.
+        // The cylinder shakes; Komo watches rather than pretending to hold it.
+        const attention = smootherStep(progress / 0.24);
+        const lean = smootherStep((progress - 0.12) / 0.34);
+        pose.headX = -4 * attention;
+        pose.headY = 7 * lean;
+        pose.headRotation = -0.035 * attention;
+        pose.bodyX = -4 * lean;
+        pose.bodyY = 1.5 * lean;
+        pose.bodyRotation = -0.014 * lean;
+        pose.leftArmDelta = 0.09 * lean;
+        pose.rightArmDelta = -0.025 * lean;
+        pose.leftLegRotation = -0.009 * lean;
+        pose.rightLegRotation = 0.014 * lean;
+        pose.antennaRotation = 0.012 * attention;
+        pose.gazeX = -0.5 * attention;
+        pose.gazeY = 0.75 * attention;
+      } else if (motion.kind === "super") {
+        const pulse = (start, end) => Math.sin(smootherStep((progress - start) / (end - start)) * Math.PI);
+        const surprise = motion.encore ? 0 : smoothStep(Math.min(progress / 0.06, (0.2 - progress) / 0.07));
+        const crouch = pulse(0.06, 0.22) + (motion.encore ? pulse(0.51, 0.59) * 0.4 : 0);
+        const jump = pulse(0.18, 0.49) + (motion.encore ? pulse(0.55, 0.79) * 0.72 : 0);
+        const landing = pulse(0.48, 0.64) + (motion.encore ? pulse(0.8, 0.9) * 0.65 : 0);
+        const raised = smootherStep((progress - 0.12) / 0.15)
+          * (1 - smootherStep((progress - (motion.encore ? 0.78 : 0.65)) / (motion.encore ? 0.18 : 0.28)));
+        const balance = Math.sin((progress - 0.2) * Math.PI * (motion.encore ? 4 : 2)) * raised;
+        // The whole rig leaves the ground; compression and settling belong to the torso.
+        pose.characterY = this.reduceMotion ? 0 : -36 * jump + 2.8 * landing;
+        pose.bodyY = crouch * 8 + landing * 6;
+        pose.bodyX = balance * 3;
+        pose.bodyRotation = balance * 0.02;
+        pose.bodyScaleX = 1 + (crouch + landing) * 0.026;
+        pose.bodyScaleY = 1 - (crouch + landing) * 0.032;
+        pose.headY = crouch * 4 + landing * 3 - raised * 2;
+        pose.headX = -balance * 2;
+        pose.headRotation = -balance * 0.012;
+        pose.headScale = 1 + surprise * 0.02;
+        pose.leftArmDelta = raised * (motion.encore ? 1.48 : 1.35) + balance * 0.045;
+        pose.rightArmDelta = -pose.leftArmDelta;
+        pose.leftLegRotation = crouch * 0.035 + jump * 0.04 - raised * 0.018;
+        pose.rightLegRotation = -pose.leftLegRotation;
+        pose.antennaRotation = -jump * 0.025 + balance * 0.018;
+        if (progress > 0.16 && this.emotion !== "happy") {
+          this.emotion = "happy";
+          this.refreshFace(true);
+        }
+      } else {
+        // Return the gaze to the visitor, acknowledge the result once, then settle.
+        const nod = Math.sin(smootherStep((progress - 0.28) / 0.48) * Math.PI);
+        pose.headY = nod * 12;
+        pose.headRotation = nod * 0.028;
+        pose.bodyY = -nod * (motion.celebrate ? 1.3 : 0.6);
+        pose.leftArmDelta = nod * (motion.celebrate ? 0.05 : 0.025);
+        pose.rightArmDelta = -pose.leftArmDelta;
+        pose.antennaRotation = -nod * 0.032;
+      }
+
+      // Carry the preceding pose through both transitions (also for repeated draws).
+      if (motion.fromPose) {
+        const entryDuration = motion.kind === "draw" ? 0.24 : motion.kind === "super" ? 0.18 : 0.48;
+        const carry = 1 - smootherStep(progress / entryDuration);
+        const neutral = createPose(this.stageOffsetX);
+        for (const key of Object.keys(pose)) {
+          if (key !== "characterX") {
+            pose[key] += (motion.fromPose[key] - neutral[key]) * carry;
+          }
+        }
+      }
+      return pose;
+    }
+
+    playFortuneMotion(kind, { duration = 1.8, celebrate = false, encore = false } = {}) {
+      if (kind !== "draw" && kind !== "reveal" && kind !== "super") {
+        return;
+      }
+      const restoreEmotion = this.fortuneMotion?.restoreEmotion || this.emotion;
+      const fromPose = this.getFortunePose();
+      this.reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      this.stageOffsetX = this.characterRig?.position.x ?? this.stageOffsetX;
+      this.waveUntil = this.elapsed;
+      this.fortuneMotion = {
+        kind,
+        startedAt: this.elapsed,
+        duration: Math.max(duration, 0.2),
+        celebrate,
+        encore,
+        restoreEmotion,
+        fromPose,
+      };
+      this.idleAction = {
+        name: "still",
+        startedAt: this.elapsed,
+        duration: 2.8,
+        direction: 1,
+        originX: this.stageOffsetX,
+        targetX: this.stageOffsetX,
+      };
+      this.emotion = kind === "super" ? (encore ? "happy" : "surprised") : kind === "draw" ? "neutral" : "happy";
+      this.emotionPulse = kind === "super" ? (encore ? 0.42 : 0.75) : kind === "reveal" ? (celebrate ? 0.42 : 0.28) : 0;
+      this.refreshFace(true);
+    }
+
+    cancelFortuneMotion() {
+      if (!this.fortuneMotion) {
+        return;
+      }
+      this.emotion = this.fortuneMotion.restoreEmotion;
+      this.fortuneMotion = null;
+      this.emotionPulse = 0;
+      this.idleAction.startedAt = this.elapsed;
+      this.refreshFace(true);
+    }
+
     updateMotion(deltaSeconds) {
       this.pointerX = damp(this.pointerX, this.pointerTargetX, 7, deltaSeconds);
       this.pointerY = damp(this.pointerY, this.pointerTargetY, 7, deltaSeconds);
       this.emotionPulse *= Math.exp(-3.2 * deltaSeconds);
 
       const motionScale = this.reduceMotion ? 0.18 : 1;
+      const fortunePose = this.getFortunePose();
       const pointerActivity = clamp(
         Math.abs(this.pointerTargetX) + Math.abs(this.pointerTargetY),
         0,
@@ -753,6 +888,7 @@
         || (this.emotion === "happy" && this.emotionPulse < 0.05);
       const canIdle =
         settledEmotion
+        && !fortunePose
         && !this.speaking
         && this.elapsed >= this.waveUntil
         && pointerActivity < 0.82;
@@ -776,13 +912,13 @@
         this.behaviorBlend * motionScale * (1 - pointerActivity * 0.72);
       this.behaviorGazeX = damp(
         this.behaviorGazeX,
-        idlePose.gazeX * behaviorWeight,
+        idlePose.gazeX * behaviorWeight + (fortunePose?.gazeX || 0) * motionScale,
         4,
         deltaSeconds,
       );
       this.behaviorGazeY = damp(
         this.behaviorGazeY,
-        idlePose.gazeY * behaviorWeight,
+        idlePose.gazeY * behaviorWeight + (fortunePose?.gazeY || 0) * motionScale,
         4,
         deltaSeconds,
       );
@@ -846,14 +982,16 @@
         + Math.sin(this.elapsed * 0.84 + 0.9) * 0.012 * quietWeight
         + idlePose.antennaRotation * behaviorWeight;
 
-      if (this.emotion === "happy") {
+      // Fortune choreography owns the body; keep the smile, not a second motion layer.
+      const poseEmotion = fortunePose ? "neutral" : this.emotion;
+      if (poseEmotion === "happy") {
         const response = this.emotionPulse;
         headRotation += Math.sin(this.elapsed * 3.1) * 0.018 * response;
         sharedPoseY -= Math.sin(response * Math.PI) * 4;
         leftArmRotation += 0.035 + response * 0.04;
         rightArmRotation -= 0.035 + response * 0.04;
         antennaTarget += Math.sin(this.elapsed * 4.8) * 0.035 * response;
-      } else if (this.emotion === "sad") {
+      } else if (poseEmotion === "sad") {
         headRotation -= 0.035;
         headOffsetY += 5;
         bodyOffsetY += 2.5;
@@ -861,20 +999,20 @@
         leftArmRotation -= 0.08;
         rightArmRotation += 0.08;
         antennaTarget -= 0.05;
-      } else if (this.emotion === "angry") {
+      } else if (poseEmotion === "angry") {
         const response = this.emotionPulse;
         headOffsetX += Math.sin(this.elapsed * 18) * 1.6 * response;
         headRotation += Math.sin(this.elapsed * 14) * 0.006 * response;
         leftArmRotation += 0.15;
         rightArmRotation -= 0.15;
         bodyOffsetY += 2;
-      } else if (this.emotion === "surprised") {
+      } else if (poseEmotion === "surprised") {
         headScale += 0.02 + this.emotionPulse * 0.045;
         sharedPoseY -= 2 + this.emotionPulse * 4;
         leftArmRotation += 0.42 + this.emotionPulse * 0.5;
         rightArmRotation -= 0.42 + this.emotionPulse * 0.5;
         antennaTarget += 0.075;
-      } else if (this.emotion === "thinking") {
+      } else if (poseEmotion === "thinking") {
         const thought = Math.sin(this.elapsed * 1.15);
         headRotation -= 0.055 + thought * 0.01;
         headOffsetX -= 4;
@@ -886,7 +1024,7 @@
         rightLegRotation += 0.025;
         bodyRotation += 0.014;
         antennaTarget -= 0.03;
-      } else if (this.emotion === "confused") {
+      } else if (poseEmotion === "confused") {
         const questionTilt = Math.sin(this.elapsed * 1.45);
         headRotation += questionTilt * 0.045;
         leftArmRotation += 0.14 + questionTilt * 0.04;
@@ -927,12 +1065,35 @@
         antennaTarget += wave * 0.06;
       }
 
-      headScale += this.emotionPulse * 0.014;
+      headScale += fortunePose ? 0 : this.emotionPulse * 0.014;
+
+      if (fortunePose) {
+        headOffsetX += fortunePose.headX * motionScale;
+        headOffsetY += fortunePose.headY * motionScale;
+        headRotation += fortunePose.headRotation * motionScale;
+        headScale *= lerp(1, fortunePose.headScale, motionScale);
+        bodyOffsetX += fortunePose.bodyX * motionScale;
+        bodyOffsetY += fortunePose.bodyY * motionScale;
+        bodyRotation += fortunePose.bodyRotation * motionScale;
+        bodyScaleX *= lerp(1, fortunePose.bodyScaleX, motionScale);
+        bodyScaleY *= lerp(1, fortunePose.bodyScaleY, motionScale);
+        leftArmRotation += fortunePose.leftArmDelta * motionScale;
+        rightArmRotation += fortunePose.rightArmDelta * motionScale;
+        leftLegRotation += fortunePose.leftLegRotation * motionScale;
+        rightLegRotation += fortunePose.rightLegRotation * motionScale;
+        antennaTarget += fortunePose.antennaRotation * motionScale;
+      }
 
       this.characterRig.position.x = damp(
         this.characterRig.position.x,
         characterOffsetX,
         3.2,
+        deltaSeconds,
+      );
+      this.characterRig.position.y = damp(
+        this.characterRig.position.y,
+        (fortunePose?.characterY || 0) * motionScale,
+        10,
         deltaSeconds,
       );
       this.headRig.rotation = damp(this.headRig.rotation, headRotation, 7, deltaSeconds);
@@ -987,6 +1148,7 @@
     }
 
     setEmotion(value, { animate = true } = {}) {
+      this.cancelFortuneMotion();
       const nextEmotion = VALID_EMOTIONS.has(value) ? value : "neutral";
       const changed = this.emotion !== nextEmotion;
       this.emotion = nextEmotion;
@@ -1000,6 +1162,9 @@
     }
 
     setSpeaking(value) {
+      if (value) {
+        this.cancelFortuneMotion();
+      }
       this.speaking = Boolean(value);
       if (!this.speaking) {
         this.mouthOpen = 0;
@@ -1062,6 +1227,9 @@
     }
 
     handlePointerDown() {
+      if (this.fortuneMotion) {
+        return;
+      }
       this.emotionPulse = 1;
       this.startWave();
     }
