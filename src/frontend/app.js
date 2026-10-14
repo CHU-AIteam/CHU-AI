@@ -124,9 +124,9 @@ const omikujiTally = new window.ComoFortuneTally(omikujiCountNodes.keys(), {
   onChange: ({ counts, total, persistent }) => {
     Object.assign(omikujiCounts, counts);
     omikujiDrawCount = total;
-    for (const [id, node] of omikujiCountNodes) node.textContent = String(counts[id]);
-    omikujiTotalCount.textContent = `${total}回`;
-    omikujiTallyLabel.textContent = persistent ? "当たり回数" : "集計（未保存）";
+    for (const [id, node] of omikujiCountNodes) node.textContent = counts[id].toLocaleString("ja-JP");
+    omikujiTotalCount.textContent = `${total.toLocaleString("ja-JP")}回`;
+    omikujiTallyLabel.textContent = persistent ? "おみくじスコア" : "スコア（未保存）";
     omikujiTallyElement.title = persistent
       ? "このブラウザに保存されます。同じURLなら再読み込み・サーバー再起動後も保持します。"
       : "ブラウザの保存領域が利用できません。現在の回数は再読み込みで消えます。";

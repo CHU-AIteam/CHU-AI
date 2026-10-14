@@ -61,25 +61,45 @@
 }
 
 .omikuji-tally {
-  width: 190px;
+  width: max-content;
+  min-width: 220px;
   flex: 0 0 auto;
   margin-right: 8px;
   padding-left: 14px;
   border-left: 1px solid var(--line);
-  color: #66748a;
+  color: #58677d;
 }
 
 .omikuji-tally-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-bottom: 5px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
-.omikuji-tally-heading span {
-  color: #34465e;
+.omikuji-tally-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #2e476b;
+  background: #edf2f9;
+}
+
+.omikuji-tally-total-label {
+  color: #667a95;
+  font-size: 0.65rem;
+}
+
+#omikuji-total-count {
+  font-size: 0.9rem;
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
 }
 
@@ -87,28 +107,52 @@
   display: grid;
   grid-auto-flow: column;
   grid-template-rows: repeat(3, auto);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, max-content);
   gap: 2px 18px;
   margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.45;
+  font-size: 0.85rem;
+  line-height: 1.2;
 }
 
 .omikuji-tally-list > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 3em minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.omikuji-tally-list dt {
+  font-weight: 700;
+  text-align: right;
 }
 
 .omikuji-tally-list dd {
+  display: grid;
+  grid-template-columns: 0.7em minmax(2ch, 1fr);
+  align-items: center;
+  column-gap: 4px;
   margin: 0;
-  color: #34465e;
-  font-weight: 800;
+  color: #263c5a;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.omikuji-tally-secret dt {
-  color: #9c783d;
+.omikuji-tally-list dd::before {
+  content: "×";
+  margin: 0;
+  color: #8c9aaf;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.omikuji-tally-secret dt,
+.omikuji-tally-secret dd {
+  color: #946b25;
   font-weight: 800;
 }
 
