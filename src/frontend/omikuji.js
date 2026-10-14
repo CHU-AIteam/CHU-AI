@@ -2,7 +2,7 @@
   "use strict";
 
   // 0.001 = 0.1%. Change this one constant to adjust the special-result probability.
-  const SUPER_RARE_PROBABILITY = 0.05;
+  const SUPER_RARE_PROBABILITY = 0.03;
   const superRareFortune = Object.freeze({
     id: "super-daikichi",
     label: "スーパー超大吉",
