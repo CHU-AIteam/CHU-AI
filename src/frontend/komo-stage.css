@@ -299,7 +299,7 @@
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 44px 90px;
+  grid-template-rows: 68px 90px;
   gap: 8px 10px;
 }
 
@@ -311,15 +311,16 @@
 
 .omikuji-heading h2 {
   color: #5a422a;
-  font-size: clamp(1.2rem, 1.4vw, 1.4rem);
+  font-size: clamp(2.5rem, 4vw, 4rem);
   font-weight: 900;
-  line-height: 1.25;
-  letter-spacing: -0.03em;
+  line-height: 1;
+  letter-spacing: -0.04em;
   white-space: nowrap;
 }
 
 .omikuji-machine {
   display: block;
+  align-self: start;
   width: 100%;
   padding: 0;
   border-radius: 12px;
@@ -370,8 +371,9 @@
   grid-column: 2;
   grid-row: 1;
   display: inline-flex;
-  min-width: 0;
+  min-width: 86px;
   min-height: 44px;
+  align-self: center;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -394,12 +396,6 @@
 .omikuji-draw:disabled {
   cursor: progress;
   opacity: 0.75;
-}
-
-.omikuji-draw svg {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
 }
 
 .omikuji-result {
