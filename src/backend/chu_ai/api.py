@@ -8,11 +8,12 @@ import sys
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from chu_ai.config import (
     CHAT_LOG_ADMIN_API_KEY,
+    COMO_KIOSK_AUTO_LOGIN,
     CHAT_HISTORY_MAX_EXCHANGES,
     CHAT_HISTORY_WINDOW_MINUTES,
     CHAT_LOG_ENABLED,
@@ -45,6 +46,7 @@ from chu_ai.services.chat_service import FORCED_KNOWLEDGE_MODE, process_user_req
 from chu_ai.services.generation_service import normalize_recommended_questions
 from chu_ai.services.hybrid_search_service import initialize_hybrid_search_runtime
 from chu_ai.services.hybrid_store_service import has_hybrid_database_config
+from chu_ai.knowledge_admin_api import router as knowledge_admin_router
 from chu_ai.services.log_storage_service import (
     get_log_storage_label,
     has_log_storage_config,
@@ -83,6 +85,7 @@ _configure_stdio_utf8()
 
 app = FastAPI(title="Chubu Commons AI Backend")
 """フロントエンドから呼び出されるAPI"""
+app.include_router(knowledge_admin_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -143,6 +146,7 @@ def health() -> dict:
     """起動確認用API"""
     return {
         "status": "ok",
+        "kiosk_auto_login": COMO_KIOSK_AUTO_LOGIN,
         "model": GEMINI_MODEL,
         "router_enabled": ROUTER_ENABLED,
         "router_model": ROUTER_MODEL,
@@ -319,6 +323,17 @@ def frontend_root() -> FileResponse:
     """チャットUIのトップページ"""
     return FileResponse(FRONTEND_DIR / "index.html")
 
+
+@app.get("/manage/knowledge-template.docx")
+def knowledge_template() -> Response:
+    from urllib.parse import quote
+    from chu_ai.knowledge_template import create_knowledge_template
+    return Response(create_knowledge_template(),
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote("コモ知識更新テンプレート.docx")})
+
+
+app.mount("/manage", StaticFiles(directory=FRONTEND_DIR / "manage", html=True), name="knowledge-management")
 
 # `/api/*` は上で定義済み。ここでは静的ファイルのみ配信する。
 app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="frontend-static")

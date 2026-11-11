@@ -32,3 +32,9 @@ data/
 node_modules/
 dist/
 build/
+
+# Local operations data and nested development dependencies
+secrets/
+**/.venv/
+**/venv/
+**/node_modules/

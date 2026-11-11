@@ -232,3 +232,13 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 """Chubu Commons AIリポジトリのルートディレクトリ"""
+
+KNOWLEDGE_RUNTIME_DIR = Path(
+    os.getenv("KNOWLEDGE_RUNTIME_DIR", "").strip() or str(PROJECT_ROOT / "data" / "knowledge")
+).expanduser()
+if not KNOWLEDGE_RUNTIME_DIR.is_absolute():
+    KNOWLEDGE_RUNTIME_DIR = PROJECT_ROOT / KNOWLEDGE_RUNTIME_DIR
+"""Git更新と分離した知識の原本・バージョン・更新履歴の保存先。"""
+
+COMO_KIOSK_AUTO_LOGIN = get_bool_env("COMO_KIOSK_AUTO_LOGIN", False)
+"""専用PCのkiosk=1起動時だけ展示用パスワード画面を省略する。"""

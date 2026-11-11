@@ -7,8 +7,10 @@ APIレスポンス整形やフォールバック判断は担当しない。
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 from hashlib import sha256
 from pathlib import Path
+import math
 from typing import Iterable
 
 from chu_ai.config import (
@@ -77,6 +79,16 @@ def initialize_hybrid_database() -> None:
     with _connect_postgres() as connection:
         with connection.cursor() as cursor:
             cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS como_knowledge_state (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    version_id TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
 
             cursor.execute(
                 """
@@ -157,11 +169,11 @@ def initialize_hybrid_database() -> None:
             )
 
 
-def _list_knowledge_paths() -> list[Path]:
+def _list_knowledge_paths(knowledge_dir: Path | None = None) -> list[Path]:
     """knowledge配下の本文Markdownファイル一覧を返す。"""
     return sorted(
         path
-        for path in KNOWLEDGE_DIR.glob("*.md")
+        for path in (knowledge_dir or KNOWLEDGE_DIR).glob("*.md")
         if path.name != KNOWLEDGE_INDEX_FILE
     )
 
@@ -291,13 +303,17 @@ def ingest_knowledge_to_hybrid_store(
     *,
     force_rebuild: bool = False,
     model: str = HYBRID_EMBEDDING_MODEL,
+    knowledge_dir: Path | None = None,
+    version_id: str | None = None,
+    expected_version: str | None = None,
+    require_all_embeddings: bool = False,
 ) -> dict[str, int]:
     """knowledgeをPostgreSQLへ再取り込みする。
 
     embeddings_by_chunk は `source_path#chunk_no` をキーにした埋め込み辞書。
     """
     initialize_hybrid_database()
-    knowledge_paths = _list_knowledge_paths()
+    knowledge_paths = _list_knowledge_paths(knowledge_dir)
     source_paths = [path.name for path in knowledge_paths]
 
     created_docs = 0
@@ -307,6 +323,13 @@ def ingest_knowledge_to_hybrid_store(
 
     with _connect_postgres() as connection:
         with connection.cursor() as cursor:
+            if version_id is not None:
+                # The active version and all searchable chunks commit together.
+                cursor.execute("SELECT pg_advisory_xact_lock(20261108, 1)")
+                cursor.execute("SELECT version_id FROM como_knowledge_state WHERE singleton = 1")
+                current = cursor.fetchone()
+                if (current[0] if current else None) != expected_version:
+                    raise RuntimeError("知識が別の操作で更新されました。内容を読み直して再度反映してください。")
             _deactivate_removed_documents(cursor, source_paths)
 
             for path in knowledge_paths:
@@ -393,9 +416,11 @@ def ingest_knowledge_to_hybrid_store(
                     embedding_key = f"{source_path}#{chunk.chunk_no}"
                     vector = embeddings_by_chunk.get(embedding_key)
                     if vector is None:
+                        if require_all_embeddings:
+                            raise RuntimeError("検索データが不足しているため、知識の反映を中止しました。")
                         continue
 
-                    if len(vector) != HYBRID_EMBEDDING_DIM:
+                    if len(vector) != HYBRID_EMBEDDING_DIM or not all(math.isfinite(value) for value in vector):
                         raise RuntimeError(
                             "埋め込み次元が設定値と一致しません。"
                             f" key={embedding_key}, got={len(vector)}, expected={HYBRID_EMBEDDING_DIM}"
@@ -429,6 +454,14 @@ def ingest_knowledge_to_hybrid_store(
                     )
                     inserted_chunks += 1
 
+            if version_id is not None:
+                cursor.execute(
+                    """INSERT INTO como_knowledge_state (singleton, version_id, updated_at)
+                       VALUES (1, %s, NOW()) ON CONFLICT (singleton)
+                       DO UPDATE SET version_id = EXCLUDED.version_id, updated_at = NOW()""",
+                    (version_id,),
+                )
+
     return {
         "created_documents": created_docs,
         "updated_documents": updated_docs,
@@ -437,12 +470,31 @@ def ingest_knowledge_to_hybrid_store(
     }
 
 
-def search_keyword_candidates(terms: list[str], limit: int) -> list[ChunkCandidate]:
+def get_active_knowledge_version() -> str | None:
+    """検索データと同じトランザクションで保存された有効バージョンを返す。"""
+    if not has_hybrid_database_config():
+        raise RuntimeError("知識検索用データベースの設定が必要です。")
+    with _connect_postgres() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT version_id FROM como_knowledge_state WHERE singleton = 1")
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+
+def get_indexed_document_hashes() -> dict[str, str]:
+    """変更した文書だけを埋め込むため、現在有効な文書のハッシュを返す。"""
+    with _connect_postgres() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT source_path, source_hash FROM documents WHERE is_active = TRUE")
+            return dict(cursor.fetchall())
+
+
+def search_keyword_candidates(terms: list[str], limit: int, *, connection=None) -> list[ChunkCandidate]:
     """抽出語にもとづくキーワード検索候補を返す。"""
     if not terms or not has_hybrid_database_config():
         return []
 
-    with _connect_postgres() as connection:
+    with (nullcontext(connection) if connection is not None else _connect_postgres()) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -488,6 +540,7 @@ def search_vector_candidates(
     *,
     limit: int,
     model: str = HYBRID_EMBEDDING_MODEL,
+    connection=None,
 ) -> list[ChunkCandidate]:
     """埋め込みベクトルの近傍検索候補を返す。"""
     if not embedding or not has_hybrid_database_config():
@@ -499,7 +552,7 @@ def search_vector_candidates(
         )
 
     vector_literal = _to_vector_literal(embedding)
-    with _connect_postgres() as connection:
+    with (nullcontext(connection) if connection is not None else _connect_postgres()) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 f"""
@@ -537,3 +590,13 @@ def search_vector_candidates(
             )
         )
     return candidates
+
+
+def search_hybrid_candidates(terms: list[str], embedding: list[float], *, keyword_limit: int, vector_limit: int):
+    """公開切替が重なっても、キーワードとベクトルは同じ知識を参照する。"""
+    with _connect_postgres() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        keyword = search_keyword_candidates(terms, keyword_limit, connection=connection)
+        vector = search_vector_candidates(embedding, limit=vector_limit, connection=connection)
+        return keyword, vector
