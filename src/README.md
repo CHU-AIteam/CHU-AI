@@ -13,6 +13,7 @@ src/
   setup.sh              ローカルPython環境の初期セットアップ
   start_backend.sh      FastAPIバックエンドを起動
   start_frontend.sh     旧構成用。フロントだけを3000番で起動
+  ../windows/          専用Windows PCの初回設定・自動起動・管理ランチャー
   backend/
     main.py             FastAPIエントリーポイント
     rebuild_hybrid_index.py  hybrid検索インデックス再構築CLI
@@ -28,6 +29,7 @@ src/
     omikuji.js          おみくじの静的文章と抽選処理
     omikuji-tally.js    運勢別集計のブラウザ保存・復元
     omikuji-celebration.js 超レア当選時だけの画面演出と時間管理
+    manage/             USB取り込み・編集・反映・履歴復元の管理画面
     assets/avatar/      透過アバター画像
     vendor/pixi.min.js  ローカル配信用PixiJS
 ```

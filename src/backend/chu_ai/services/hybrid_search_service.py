@@ -26,8 +26,7 @@ from chu_ai.services.hybrid_store_service import (
     ChunkCandidate,
     has_hybrid_database_config,
     initialize_hybrid_database,
-    search_keyword_candidates,
-    search_vector_candidates,
+    search_hybrid_candidates,
 )
 from chu_ai.services.search_term_service import extract_search_terms
 
@@ -184,12 +183,10 @@ def search_knowledge_hybrid(user_text: str) -> tuple[str, list[str]]:
     query_text = current_question or user_text
 
     query_terms = extract_search_terms(query_text)
-    keyword_candidates = search_keyword_candidates(query_terms, HYBRID_KEYWORD_TOP_K)
-
     query_embedding = embed_query_text(query_text)
-    vector_candidates = search_vector_candidates(
-        query_embedding,
-        limit=HYBRID_VECTOR_TOP_K,
+    keyword_candidates, vector_candidates = search_hybrid_candidates(
+        query_terms, query_embedding,
+        keyword_limit=HYBRID_KEYWORD_TOP_K, vector_limit=HYBRID_VECTOR_TOP_K,
     )
 
     ranked_chunks = _build_rrf_ranking(

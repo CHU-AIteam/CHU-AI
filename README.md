@@ -165,6 +165,27 @@ curl -s http://127.0.0.1:8000/api/admin/feedback-logs \
 
 ## 運用
 
+### Windowsのコモ専用PC
+
+本番Windows PCでは、最初に [windows/README.md](windows/README.md) に沿って `windows\setup.cmd` を開きます。デスクトップに「コモ管理」を作り、次のWindowsログインからコモが自動で開くようにします。Git・Docker Desktop・Edgeと本番接続情報の初回設定は担当者が済ませます。
+
+- 「コモを開く」「コモを再起動」「本日の利用を終了」から日常操作できます。
+- 「知識を更新」からUSBのWord（`.docx`）・テキスト・Markdownを選び、読み取った内容と追加／置き換えを確認して反映します。Wordの図・画像は本文として取り込みません。PDF・Excel・旧Word（`.doc`）は初期対応に含みません。
+- 管理画面には既存知識の編集、更新履歴と復元、Wordテンプレート、印刷用の図解手順書があります。Wordテンプレートの未記入欄は反映できません。
+- 「アプリを更新」は現在のGit追跡ブランチをfast-forwardで取得してDockerを再ビルド・起動します。既存のGitHub同期はprivate mainからpublic mainまでで、本番PCの更新はこの操作で行います。
+
+運用中の原本・知識バージョン・ジョブ履歴は `data/knowledge/`、検索データと有効バージョンはPostgreSQLの永続ボリュームに保存します。両方を保存・バックアップ対象にしてください。初期の `src/backend/knowledge/` は最初の準備にだけ使用し、Gitのコード更新がUSBで更新した知識を上書きすることはありません。
+
+反映はバックグラウンドで実行し、準備中は現在の知識を使用します。検索データと有効バージョンを同一トランザクションで公開し、質問ごとの検索も同じスナップショットを参照します。更新の失敗やプロセスの中断はジョブに記録し、復元でも現在の知識を履歴に残します。
+
+管理APIは設置PCのループバックURLと `X-Admin-Key` を使います。ランチャーはキーをURLフラグメントで渡し、管理画面が即座にURLから取り除いてタブ内のsessionStorageへ保持します。利用者向け画面の展示用パスワードとは別の設定です。
+
+自動入場は `COMO_KIOSK_AUTO_LOGIN=true` かつ `?kiosk=1` の組み合わせで有効です。通常の起動では展示用パスワード画面を表示します。ランチャーは集計を引き継げるよう `http://127.0.0.1:8000` を固定で使用します。
+
+運用機能の検証は `PYTHONPATH=src/backend python -m unittest discover -s tests/backend`、フロントエンドは `node --test tests/frontend/*.test.cjs` で実行できます。実DBテストは `COMO_TEST_POSTGRES_DSN` にloopbackの専用DB `chuai_ops_test` を指定した時だけ実行し、そのDBの知識テーブルを初期化します。運用DBは指定しないでください。Windows実機では初回設定・自動起動・Edge全画面・USB選択を確認してください。
+
+### 開発者向けの手動操作
+
 コード更新だけなら:
 
 ```bash
@@ -173,6 +194,8 @@ docker compose up -d --build
 ```
 
 ナレッジを追加・更新した時は、起動後に再インデックスします。
+
+運用管理を開始したPCでは、このコマンドも現在有効な保存済み知識を参照します。日常の知識編集には管理画面を使ってください。
 
 ```bash
 docker compose exec chu-ai python rebuild_hybrid_index.py

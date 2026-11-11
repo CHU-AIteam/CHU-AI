@@ -143,6 +143,7 @@ let isInputLocked = false;
 let configuredInactivityResetSeconds = DEFAULT_INACTIVITY_RESET_SECONDS;
 let configuredHistoryMaxExchanges = DEFAULT_HISTORY_MAX_EXCHANGES;
 let configuredHistoryWindowMs = DEFAULT_HISTORY_WINDOW_MINUTES * 60 * 1000;
+let configuredKioskAutoLogin = false;
 let chatResetTimerId = null;
 let warningTickerId = null;
 let chatResetDeadlineTs = 0;
@@ -974,6 +975,7 @@ async function loadRuntimeSettings() {
       return;
     }
     const data = await response.json();
+    configuredKioskAutoLogin = data.kiosk_auto_login === true;
     const candidate = Number.parseInt(data.home_return_seconds, 10);
     if (Number.isFinite(candidate) && candidate > 0) {
       configuredInactivityResetSeconds = candidate;
@@ -1198,9 +1200,11 @@ async function initialize() {
   resetQuickQuestions();
   bindEvents();
   void initAvatarPuppet();
-  showScreen(screenPassword);
-  if (passwordInput) {
-    passwordInput.focus();
+  if (configuredKioskAutoLogin && new URLSearchParams(window.location.search).get("kiosk") === "1") {
+    openChatScreen();
+  } else {
+    showScreen(screenPassword);
+    if (passwordInput) passwordInput.focus();
   }
 }
 

@@ -7,6 +7,7 @@ PostgreSQLのdocuments/chunks/chunk_embeddingsへ反映する。
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from chu_ai.config import KNOWLEDGE_DIR, KNOWLEDGE_INDEX_FILE
 from chu_ai.services.embedding_service import embed_texts
@@ -18,10 +19,10 @@ from chu_ai.services.hybrid_store_service import (
 )
 
 
-def _collect_chunk_payloads() -> list[tuple[str, str]]:
+def _collect_chunk_payloads(knowledge_dir: Path = KNOWLEDGE_DIR) -> list[tuple[str, str]]:
     """埋め込み対象チャンク一覧を `key, body` 形式で返す。"""
     payloads: list[tuple[str, str]] = []
-    for path in sorted(KNOWLEDGE_DIR.glob("*.md")):
+    for path in sorted(knowledge_dir.glob("*.md")):
         if path.name == KNOWLEDGE_INDEX_FILE:
             continue
 
@@ -76,8 +77,11 @@ def main() -> None:
     print("Initializing hybrid database schema...")
     initialize_hybrid_database()
 
+    from chu_ai.services.knowledge_admin_service import current_knowledge_directory
+    knowledge_dir, active_version = current_knowledge_directory()
+
     print("Collecting knowledge chunks...")
-    payloads = _collect_chunk_payloads()
+    payloads = _collect_chunk_payloads(knowledge_dir)
     print(f"Total chunks to embed: {len(payloads)}")
 
     print("Building embeddings with Gemini...")
@@ -87,6 +91,10 @@ def main() -> None:
     stats = ingest_knowledge_to_hybrid_store(
         embeddings,
         force_rebuild=args.force_rebuild,
+        knowledge_dir=knowledge_dir,
+        version_id=active_version,
+        expected_version=active_version,
+        require_all_embeddings=True,
     )
 
     print("Done.")

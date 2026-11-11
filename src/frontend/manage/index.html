@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow">
+    <title>コモ管理 — 知識の更新</title>
+    <link rel="stylesheet" href="./manage.css?v=20261108-01">
+    <script src="./manage.js?v=20261108-01" defer></script>
+  </head>
+  <body>
+    <div class="management-shell">
+      <header class="page-header">
+        <div class="brand"><p class="brand-name">Chat-Como</p><h1>知識の管理</h1></div>
+        <nav class="header-links" aria-label="管理画面の案内">
+          <a href="/?kiosk=1" target="_blank" rel="noopener noreferrer">コモを開く <span aria-hidden="true">↗</span></a>
+          <a href="./guide.html" target="_blank" rel="noopener noreferrer">操作手順</a>
+          <button type="button" class="text-button" id="disconnect" hidden>管理画面から切断</button>
+        </nav>
+      </header>
+
+      <main>
+        <section class="connection-panel" id="connection-panel" aria-labelledby="connection-title">
+          <span class="eyebrow">コモ管理</span>
+          <h2 id="connection-title">管理画面に接続します</h2>
+          <p>設置PCのデスクトップにある「コモ管理」から開くと、自動で接続します。</p>
+          <form id="connection-form" class="connection-form">
+            <label for="connection-key">管理用の接続キー</label>
+            <div class="connection-input-row">
+              <input id="connection-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+              <button class="primary-button" type="submit" id="connect">接続する</button>
+            </div>
+            <p class="helper">手動で接続する場合は、初期設定で用意した管理用の接続キーを入力してください。</p>
+          </form>
+        </section>
+
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+        <div id="workspace" hidden>
+          <section class="status-strip" aria-label="知識の状態">
+            <div><span class="status-dot" id="status-dot" aria-hidden="true"></span><strong id="connection-status">接続を確認しています</strong></div>
+            <p>最後の更新 <time id="last-updated">—</time></p>
+            <button type="button" id="refresh" class="text-button">最新の状態を確認</button>
+          </section>
+
+          <section id="initialize-panel" class="initialize-panel" hidden aria-labelledby="initialize-title">
+            <div><h2 id="initialize-title">最初の準備を行います</h2><p>コモが知識を探せるように準備します。完了するまで、この画面を開いたままお待ちください。</p></div>
+            <button type="button" class="primary-button" id="initialize" data-mutation>準備をはじめる</button>
+          </section>
+
+          <section id="job-panel" class="job-panel" hidden aria-labelledby="job-title" aria-live="polite">
+            <div class="job-heading"><h2 id="job-title">知識を更新しています</h2><span id="job-state">準備中</span></div>
+            <p id="job-message">少しお待ちください。</p>
+            <progress id="job-progress" max="100" aria-label="知識の更新状況"></progress>
+            <p class="helper" id="job-help">途中でUSBを抜かず、完了の表示をお待ちください。</p>
+            <a class="primary-button job-open-como" href="/?kiosk=1" target="_blank" rel="noopener noreferrer" id="job-open-como" hidden>コモで質問して確認する <span aria-hidden="true">↗</span></a>
+          </section>
+
+          <div class="view-tabs" role="tablist" aria-label="知識管理の操作">
+            <button type="button" role="tab" id="tab-import" aria-controls="view-import" aria-selected="true" data-view="import">USB・ファイルから更新</button>
+            <button type="button" role="tab" id="tab-edit" aria-controls="view-edit" aria-selected="false" tabindex="-1" data-view="edit">登録済みの知識を編集</button>
+            <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1" data-view="history">更新履歴・元に戻す</button>
+          </div>
+
+          <section id="view-import" class="view-panel" role="tabpanel" aria-labelledby="tab-import">
+            <div class="section-heading"><div><h2>ファイルから知識を更新する</h2><p>USBの資料を選び、内容を確認してからコモに反映します。</p></div><a class="secondary-link" href="./knowledge-template.docx" download>Wordテンプレートを保存</a></div>
+            <ol class="steps" aria-label="知識更新の手順"><li class="current" data-step="1"><span>1</span>ファイルを選ぶ</li><li data-step="2"><span>2</span>内容を確認</li><li data-step="3"><span>3</span>コモに反映</li></ol>
+            <form id="import-form">
+              <fieldset id="import-fields">
+                <legend class="visually-hidden">取り込むファイルと反映先</legend>
+                <div class="file-picker">
+                  <div><h3>USBを挿したら、ファイルを選んでください</h3><p>ファイルを選ぶ画面で、USBドライブを開きます。</p><p class="file-selection" id="file-selection">ファイルはまだ選ばれていません</p></div>
+                  <button type="button" class="secondary-button" id="choose-file" data-mutation>ファイルを選ぶ</button>
+                  <input type="file" id="knowledge-file" class="visually-hidden" accept=".docx,.txt,.md,.markdown" tabindex="-1" aria-label="取り込む知識ファイル">
+                </div>
+                <p class="helper file-types">対応：Word（.docx）、テキスト（.txt）、Markdown（.md）／1ファイル8MBまで。PDF・Excelは現在取り込めません。</p>
+                <p class="reading-note">Wordは本文・見出し・表を読み取ります。画像・スキャン・図形に書かれた情報は読み取れません。次の画面で内容を確認してください。</p>
+                <div class="target-picker">
+                  <h3>この資料をどう反映しますか？</h3>
+                  <label class="radio-label"><input type="radio" name="import-mode" value="add" checked data-mutation>新しい知識として追加する</label>
+                  <label class="radio-label"><input type="radio" name="import-mode" value="replace" data-mutation>登録済みの知識を置き換える</label>
+                  <label for="import-target" class="field-label" id="import-target-label" hidden>置き換える知識</label>
+                  <select id="import-target" aria-labelledby="import-target-label" hidden disabled data-mutation><option value="">置き換える知識を選んでください</option></select>
+                </div>
+                <div class="form-actions"><button type="submit" class="primary-button" id="read-file" data-mutation>内容を読み取って確認する <span aria-hidden="true">→</span></button></div>
+              </fieldset>
+            </form>
+          </section>
+
+          <section id="view-edit" class="view-panel" role="tabpanel" aria-labelledby="tab-edit" hidden>
+            <div class="section-heading"><div><h2>登録済みの知識を編集する</h2><p>知識を選んで内容を直し、確認してから反映します。</p></div><button type="button" class="secondary-button" id="new-document" data-mutation>文章を入力して追加</button></div>
+            <div class="editor-layout">
+              <section class="document-picker" aria-label="登録済みの知識">
+                <label for="document-filter" class="field-label">知識を探す</label><input id="document-filter" type="search" placeholder="タイトル・ファイル名で絞り込み" autocomplete="off">
+                <p class="list-count" id="document-count">知識を読み込んでいます</p><div class="document-list" id="document-list"></div>
+              </section>
+              <form id="edit-form" class="edit-form">
+                <fieldset id="edit-fields" disabled>
+                  <legend id="editor-legend">左の一覧から知識を選んでください</legend>
+                  <label for="edit-title" class="field-label">タイトル</label><input id="edit-title" type="text" maxlength="150" required data-mutation>
+                  <label for="edit-content" class="field-label">内容</label><textarea id="edit-content" rows="13" maxlength="200000" required data-mutation></textarea>
+                  <p class="helper" id="editor-source"></p>
+                  <div class="form-actions"><button type="submit" class="primary-button" data-mutation>変更内容を確認する <span aria-hidden="true">→</span></button></div>
+                </fieldset>
+              </form>
+            </div>
+          </section>
+
+          <section id="view-history" class="view-panel" role="tabpanel" aria-labelledby="tab-history" hidden>
+            <div class="section-heading"><div><h2>更新履歴・元に戻す</h2><p>以前の状態を選ぶと、その時点の知識にまとめて戻せます。</p></div></div>
+            <div id="history-list" class="history-list"></div>
+            <section class="restore-panel" id="restore-panel" aria-labelledby="restore-title" hidden>
+              <h3 id="restore-title">この時点の知識に戻しますか？</h3><p id="restore-description"></p>
+              <p>現在の知識は履歴に残ります。コモが使う知識全体が、選んだ時点の内容に切り替わります。</p>
+              <label class="confirmation"><input type="checkbox" id="restore-confirm" data-mutation>この時点の知識に戻すことを確認しました</label>
+              <div class="form-actions"><button type="button" class="secondary-button" id="cancel-restore">やめる</button><button type="button" class="primary-button" id="restore" disabled data-mutation>この内容に戻す</button></div>
+            </section>
+          </section>
+
+          <section class="view-panel preview-panel" id="preview-panel" aria-labelledby="preview-heading" hidden>
+            <div class="section-heading"><div><span class="eyebrow" id="preview-action">内容を確認</span><h2 id="preview-heading" tabindex="-1">コモに反映する内容を確認してください</h2></div><button type="button" class="text-button" id="back-to-form">選び直す・編集に戻る</button></div>
+            <p class="preview-summary" id="preview-summary"></p>
+            <ul id="preview-warnings" class="preview-warnings" hidden></ul>
+            <div class="comparison-layout">
+              <section id="previous-section" hidden><h3>現在の内容</h3><pre class="previous-content" id="previous-content"></pre></section>
+              <section><h3>反映する内容</h3><label for="preview-title" class="field-label">タイトル</label><input id="preview-title" type="text" maxlength="150" required data-mutation><label for="preview-content" class="field-label">内容</label><textarea id="preview-content" rows="14" maxlength="200000" data-mutation></textarea><p class="helper">読み取れなかった情報や間違いがあれば、ここで修正できます。修正後はもう一度確認してから反映します。</p></section>
+            </div>
+            <label class="confirmation"><input type="checkbox" id="publish-confirm" data-mutation><span id="publish-confirm-label">内容を確認しました</span></label>
+            <div class="form-actions"><span class="helper">反映が終わるまでは、現在の知識でコモを利用できます。</span><button type="button" class="primary-button" id="publish" disabled data-mutation>この内容をコモに反映する</button></div>
+          </section>
+        </div>
+      </main>
+      <footer class="page-footer">コモンズの設置PCで使う管理画面です。反映が完了したら、USBを抜いても利用できます。</footer>
+    </div>
+  </body>
+</html>
