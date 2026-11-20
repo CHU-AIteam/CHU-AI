@@ -7,6 +7,10 @@ const API_URL = (() => {
 })();
 const HEALTH_URL = API_URL.replace(/\/chat$/, "/health");
 const FEEDBACK_URL = API_URL.replace(/\/chat$/, "/feedback");
+const kioskParams = new URLSearchParams(window.location.search);
+const kioskWindowId = kioskParams.get("como_window") || "";
+const managedKiosk = kioskParams.get("kiosk") === "1" && /^[a-f0-9]{12}$/.test(kioskWindowId);
+if (managedKiosk) document.title = "Chat-Como [" + kioskWindowId + "]";
 const DEFAULT_INACTIVITY_RESET_SECONDS = 30;
 const DEFAULT_HISTORY_MAX_EXCHANGES = 5;
 const DEFAULT_HISTORY_WINDOW_MINUTES = 2;
@@ -140,6 +144,7 @@ const quickButtons = document.querySelectorAll(".quick-button");
 const exchangeHistory = [];
 
 let isInputLocked = false;
+let chatPaused = false;
 let configuredInactivityResetSeconds = DEFAULT_INACTIVITY_RESET_SECONDS;
 let configuredHistoryMaxExchanges = DEFAULT_HISTORY_MAX_EXCHANGES;
 let configuredHistoryWindowMs = DEFAULT_HISTORY_WINDOW_MINUTES * 60 * 1000;
@@ -576,11 +581,34 @@ function bindQuickQuestionButtons() {
 
 function setInputLocked(locked) {
   isInputLocked = locked;
-  question.disabled = locked;
-  send.disabled = locked;
+  const disabled = locked || chatPaused;
+  question.disabled = disabled;
+  send.disabled = disabled;
   quickButtons.forEach((button) => {
-    button.disabled = locked;
+    button.disabled = disabled;
   });
+}
+
+function setChatPaused(paused) {
+  if (paused === chatPaused) return;
+  chatPaused = paused;
+  document.getElementById("chat-column").dataset.chatPaused = String(paused);
+  document.getElementById("chat-paused").hidden = !paused;
+  document.getElementById("clear-chat").hidden = paused;
+  setInputLocked(isInputLocked);
+}
+
+async function refreshKioskAvailability() {
+  try {
+    const response = await fetch(HEALTH_URL, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    if (!response.ok) throw new Error("Health check failed");
+    const data = await response.json();
+    setChatPaused(data.kiosk_chat_paused === true);
+  } catch {
+    setChatPaused(true);
+  } finally {
+    setTimeout(refreshKioskAvailability, 8000);
+  }
 }
 
 function sleep(ms) {
@@ -1000,7 +1028,7 @@ async function loadRuntimeSettings() {
 async function sendQuestion(text) {
   noteUserActivity(true);
 
-  if (isInputLocked) {
+  if (isInputLocked || chatPaused) {
     return;
   }
 
@@ -1202,6 +1230,10 @@ async function initialize() {
   void initAvatarPuppet();
   if (configuredKioskAutoLogin && new URLSearchParams(window.location.search).get("kiosk") === "1") {
     openChatScreen();
+    if (managedKiosk) {
+      setChatPaused(kioskParams.get("chat_paused") === "1");
+      void refreshKioskAvailability();
+    }
   } else {
     showScreen(screenPassword);
     if (passwordInput) passwordInput.focus();

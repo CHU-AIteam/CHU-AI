@@ -235,13 +235,8 @@ def build_generation_prompt(
 
 
 def api_key_is_valid(api_key: str) -> bool:
-    """Gemini APIキーとして最低限使える文字列か確認する関数"""
-    try:
-        api_key.encode("ascii")
-    except UnicodeEncodeError:
-        return False
-
-    return api_key.startswith("AIza") and len(api_key) >= 30
+    """形式だけを確かめ、標準キーと認証キーの有効性はGeminiに確認する。"""
+    return re.fullmatch(r"[A-Za-z0-9_-]{30,256}", api_key) is not None
 
 
 def call_gemini_api(prompt_text: str, model: str = GEMINI_MODEL) -> str:

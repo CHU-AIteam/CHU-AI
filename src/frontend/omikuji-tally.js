@@ -5,6 +5,13 @@
   const STORAGE_KEY = "chat-como.omikuji-tally.v1";
 
   class ComoFortuneTally {
+    static get storageKey() {
+      return STORAGE_KEY;
+    }
+
+    static get ids() {
+      return ["super-daikichi", "daikichi", "kichi", "chukichi", "shokichi", "suekichi"];
+    }
     constructor(ids, { storage, onChange = () => {} } = {}) {
       this.ids = [...new Set(ids)];
       this.onChange = onChange;

@@ -24,6 +24,7 @@ if str(BACKEND) not in sys.path:
 
 from chu_ai.services import hybrid_store_service as store
 from chu_ai.services.knowledge_admin_service import KnowledgeManager, index_version
+from chu_ai.services.knowledge_backup_service import TALLY_IDS, create_backup, read_backup, restore_backup
 
 
 TEST_DSN = os.environ.get("COMO_TEST_POSTGRES_DSN", "").strip()
@@ -225,6 +226,40 @@ class KnowledgePostgresIntegrationTests(TestCase):
         self.assertEqual(result["status"], "succeeded", result)
         self.assertEqual(store.get_active_knowledge_version(), active)
         self.assertEqual(self.embedding_mock.call_count, calls, "an already initialized PC must not re-import Git seed")
+
+    def test_document_stop_restore_and_portable_backup_preserve_other_search_results(self):
+        start = self.initialize()
+        document = "02_opening_hours.md"
+        removed = self.finish(self.manager.update_document(document, start, enabled=False))
+        self.assertFalse(self.keyword("OLDHOURS"))
+        self.assertTrue(self.keyword("OLDPLACE"))
+        self.assertFalse(self.manager.document(document)["enabled"])
+        added = self.manager.preview(filename="USB資料.txt", data="貸出に関する NEWBORROW".encode(), import_mode="add")
+        version = self.publish(added)
+        restored = self.finish(self.manager.update_document(document, version, version_id=start))
+        self.assertTrue(self.keyword("OLDHOURS"))
+        self.assertTrue(self.keyword("NEWBORROW"))
+        self.assertIn(removed, [item["id"] for item in self.manager.status()["history"]])
+
+        tally = dict.fromkeys(TALLY_IDS, 2)
+        backup = create_backup(self.manager, tally)
+        archive = read_backup(backup)
+        self.assertEqual(archive.tally, tally)
+        self.assertIn(added["original"], archive.originals)
+
+        # Simulate a new PC with a clean runtime and an empty search index.
+        with store._connect_postgres() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("TRUNCATE TABLE chunk_embeddings, chunks, documents, como_knowledge_state RESTART IDENTITY CASCADE")
+        self.runtime = Path(self.temporary.name) / "replacement-pc"
+        self.manager = self.new_manager()
+        self.jobs.clear()
+        self.finish(restore_backup(self.manager, backup, None))
+        self.assertTrue(self.keyword("OLDHOURS"))
+        self.assertTrue(self.keyword("NEWBORROW"))
+        self.assertEqual((self.runtime / "originals" / added["original"]).read_bytes(), "貸出に関する NEWBORROW".encode())
+        self.assertEqual(len(self.manager.status()["history"]), 5)
+        self.assertNotEqual(self.manager.status()["active_version"], restored)
 
     def test_manager_reports_failure_and_keeps_existing_search_when_vectors_are_invalid(self):
         first = self.initialize()

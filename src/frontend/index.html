@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Chubu Commons AI</title>
-    <link rel="stylesheet" href="./style.css?v=20261007-questions-01">
+    <link rel="stylesheet" href="./style.css?v=20261120-windows">
     <link rel="stylesheet" href="./komo-stage.css?v=20261014-omikuji-score-02">
   </head>
   <body>
@@ -55,7 +55,11 @@
         </header>
 
         <div class="chat-layout">
-          <section class="chat-column">
+          <section class="chat-column" id="chat-column">
+            <div class="chat-paused" id="chat-paused" hidden role="status">
+              <strong>ただいま質問の受付をお休みしています</strong>
+              <p>コモに触ったり、おみくじを引いたりして遊べます。</p>
+            </div>
             <section class="chat-area" aria-label="会話">
               <div class="conversation-heading">
                 <p>知りたいことをそのまま話しかけてください</p>
@@ -179,6 +183,6 @@
     <script src="./omikuji.js?v=20261007-super-01"></script>
     <script src="./omikuji-tally.js?v=20261007-tally-01"></script>
     <script src="./omikuji-celebration.js?v=20261007-super-04"></script>
-    <script src="./app.js?v=20261108-kiosk-01"></script>
+    <script src="./app.js?v=20261120-windows"></script>
   </body>
 </html>

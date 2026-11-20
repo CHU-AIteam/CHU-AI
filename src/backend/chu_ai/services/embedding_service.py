@@ -120,7 +120,7 @@ def embed_texts(
             contents=texts,
             config=config,
         )
-    except Exception:
+    except TypeError:
         # SDKバージョン差異でconfigが受け取れない場合に備えて簡易呼び出しを試す。
         response = client.models.embed_content(
             model=model,

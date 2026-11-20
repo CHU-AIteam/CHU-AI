@@ -8,13 +8,18 @@ $script:ComoStateDir = Join-Path $script:ComoRoot 'data\windows-launcher'
 $script:ComoOperationPath = Join-Path $script:ComoStateDir 'operation.json'
 $script:ComoRuntimePath = Join-Path $script:ComoStateDir 'runtime.json'
 $script:ComoLogPath = Join-Path $script:ComoStateDir 'operations.log'
+$script:ComoReleasePath = Join-Path $script:ComoStateDir 'release.json'
+$script:ComoSetupPath = Join-Path $script:ComoStateDir 'setup.json'
+$script:ComoKioskPath = Join-Path $script:ComoStateDir 'kiosk.json'
+$script:ComoStartedAt = [DateTimeOffset]::Now.ToString('o')
+$script:ComoStep = ''
 $utf8 = New-Object Text.UTF8Encoding($false)
 $script:ComoUtf8 = $utf8
 $OutputEncoding = $utf8
 try { [Console]::OutputEncoding = $utf8 } catch { }
 
 function Get-ComoValue($Object, [string]$Name, $Default = $null) {
-    if ($null -ne $Object -and $Object.PSObject.Properties.Name -contains $Name) { return $Object.$Name }
+    if ($null -ne $Object -and $null -ne $Object.PSObject.Properties[$Name]) { return $Object.$Name }
     return $Default
 }
 
@@ -41,7 +46,13 @@ function Set-ComoSetting([string]$Name, [string]$Value) {
         $replacement = $Name + '=' + $Value
         $text = [regex]::Replace($text, $pattern, [Text.RegularExpressions.MatchEvaluator]{ param($match) $replacement })
     } else { $text = $text.TrimEnd() + [Environment]::NewLine + $Name + '=' + $Value + [Environment]::NewLine }
-    [IO.File]::WriteAllText($script:ComoEnvPath, $text, $script:ComoUtf8)
+    $temporary = $script:ComoEnvPath + '.' + $PID + '.tmp'
+    try {
+        [IO.File]::WriteAllText($temporary, $text, $script:ComoUtf8)
+        [IO.File]::Replace($temporary, $script:ComoEnvPath, [NullString]::Value)
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
 }
 
 function Protect-ComoText([string]$Text) {
@@ -51,6 +62,7 @@ function Protect-ComoText([string]$Text) {
         if ($key -match '(KEY|TOKEN|PASSWORD|SECRET|DSN)' -and $settings[$key].Length -ge 4) { $safe = $safe.Replace($settings[$key], '[非表示]') }
     }
     $safe = [regex]::Replace($safe, '(?i)(https?://)[^/@\s]+@', '$1[非表示]@')
+    $safe = [regex]::Replace($safe, '(?i)(AIza[A-Za-z0-9_-]{20,}|(postgres(?:ql)?://)[^\s"'']+)', '[非表示]')
     return [regex]::Replace($safe, '(?i)#key=[^\s"'']+', '#key=[非表示]')
 }
 
@@ -91,8 +103,24 @@ function Read-ComoJson([string]$Path) {
     }
 }
 
-function Write-ComoOperation([string]$Phase, [string]$Message, [string]$Operation) {
-    Write-ComoJson $script:ComoOperationPath @{ phase = $Phase; message = (Protect-ComoText $Message); operation = $Operation; updated_at = [DateTimeOffset]::Now.ToString('o'); process_id = $PID }
+function Write-ComoOperation([string]$Phase, [string]$Message, [string]$Operation, [string]$Code = '', [int]$Progress = -1) {
+    Write-ComoJson $script:ComoOperationPath @{
+        phase = $Phase; message = (Protect-ComoText $Message); operation = $Operation; code = $Code
+        updated_at = [DateTimeOffset]::Now.ToString('o'); started_at = $script:ComoStartedAt
+        step = $script:ComoStep; progress = $Progress; process_id = $PID
+    }
+}
+
+function Write-ComoStep([string]$Operation, [string]$Step, [string]$Message, [int]$Progress = -1) {
+    $script:ComoStep = $Step
+    Write-ComoOperation 'running' $Message $Operation '' $Progress
+}
+
+function New-ComoError([string]$Message, [string]$Code, [int]$HttpStatus = 0) {
+    $errorValue = [InvalidOperationException]::new($Message)
+    $errorValue.Data['como_code'] = $Code
+    $errorValue.Data['http_status'] = $HttpStatus
+    return $errorValue
 }
 
 function Get-ComoId {
@@ -117,7 +145,8 @@ function Get-ComoExecutable([string]$Kind) {
         if ($null -ne $command) { return $command.Source }
     }
     foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate) { return $candidate } }
-    throw ('必要なソフトが見つかりません: ' + $Kind + '。初回設定の手順を確認してください。')
+    $names = @{ git = 'Git'; docker = 'Docker Desktop'; desktop = 'Docker Desktop'; edge = 'Microsoft Edge' }
+    throw (New-ComoError ($names[$Kind] + 'が見つかりません。設置担当者にインストールを依頼してください。') 'software')
 }
 
 function ConvertTo-ComoArgument([string]$Value) {
@@ -126,7 +155,7 @@ function ConvertTo-ComoArgument([string]$Value) {
     return '"' + $Value.TrimEnd('\') + '"'
 }
 
-function Invoke-ComoProcess([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 1800, [int[]]$AllowedExitCodes = @(0)) {
+function Invoke-ComoProcess([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 1800, [int[]]$AllowedExitCodes = @(0), [hashtable]$Environment = @{}, [switch]$Quiet) {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $Executable
     $info.Arguments = (($Arguments | ForEach-Object { ConvertTo-ComoArgument $_ }) -join ' ')
@@ -137,6 +166,7 @@ function Invoke-ComoProcess([string]$Executable, [string[]]$Arguments, [int]$Tim
     $info.RedirectStandardError = $true
     $info.StandardOutputEncoding = $script:ComoUtf8
     $info.StandardErrorEncoding = $script:ComoUtf8
+    foreach ($key in $Environment.Keys) { $info.EnvironmentVariables[$key] = $Environment[$key] }
     $process = New-Object Diagnostics.Process
     $process.StartInfo = $info
     try {
@@ -148,182 +178,222 @@ function Invoke-ComoProcess([string]$Executable, [string[]]$Arguments, [int]$Tim
             throw '処理が時間内に終わりませんでした。ネットワーク接続とDocker Desktopを確認してください。'
         }
         $result = @{ exit_code = $process.ExitCode; output = $stdout.Result; error = $stderr.Result }
-        foreach ($output in @($result.output, $result.error)) { if ($output.Trim()) { Write-ComoLog $output.Trim() } }
+        if (-not $Quiet) {
+            foreach ($output in @($result.output, $result.error)) {
+                if ($output.Trim()) { Write-ComoLog $output.Trim() }
+            }
+        }
         if ($AllowedExitCodes -notcontains $process.ExitCode) {
-            throw ('処理に失敗しました。操作記録を確認してください。' + [Environment]::NewLine + (Protect-ComoText $result.error.Trim()))
+            $message = '処理を完了できませんでした。コモ管理から再試行してください。'
+            $code = 'command'
+            if ($result.error -match '(?i)port is already allocated|address already in use|ports are not available') {
+                $message = '必要なポートを別のアプリが使っています。開発担当者に起動中のアプリを確認してもらってください。'
+                $code = 'port'
+            }
+            throw (New-ComoError $message $code)
         }
         return $result
     } finally { $process.Dispose() }
 }
 
-function Invoke-ComoCompose([string[]]$Arguments) {
-    return (Invoke-ComoProcess (Get-ComoExecutable 'docker') (@('compose', '--project-directory', $script:ComoRoot) + $Arguments))
+function Invoke-ComoCompose([string[]]$Arguments, [string]$Revision = '', [switch]$Quiet) {
+    $composeArgs = @('compose', '--project-directory', $script:ComoRoot, '-f', (Join-Path $script:ComoRoot 'docker-compose.yml'))
+    $processEnv = @{}
+    if ($Revision) {
+        $composeArgs += @('-f', (Join-Path $PSScriptRoot 'internal\compose.windows.yml'))
+        $processEnv = @{ COMO_WINDOWS_IMAGE = (Get-ComoImage $Revision); COMO_WINDOWS_REVISION = $Revision }
+    }
+    return (Invoke-ComoProcess (Get-ComoExecutable 'docker') ($composeArgs + $Arguments) -Environment $processEnv -Quiet:$Quiet)
 }
 
-function Assert-ComoSettings {
+function Assert-ComoSettings([switch]$AllowMissingGemini) {
     $settings = Get-ComoSettings
-    if (-not $settings.ContainsKey('API_KEY') -or $settings.API_KEY -match '^(|your-gemini-api-key)$') { throw '初回設定が必要です。windows\setup.cmd を開き、APIキーを設定してください。' }
-    if (-not $settings.ContainsKey('CHAT_LOG_ADMIN_API_KEY') -or $settings.CHAT_LOG_ADMIN_API_KEY -match '^(|change-this-admin-key)$') { throw '管理画面の初回設定が必要です。windows\setup.cmd を開いてください。' }
+    if (-not $settings.ContainsKey('CHAT_LOG_ADMIN_API_KEY') -or $settings.CHAT_LOG_ADMIN_API_KEY -match '^(|change-this-admin-key)$') {
+        throw (New-ComoError '初回設定で管理用の接続を準備してください。' 'settings')
+    }
+    if (-not $AllowMissingGemini -and (-not $settings.ContainsKey('API_KEY') -or $settings.API_KEY -match '^(|your-gemini-api-key)$')) {
+        throw (New-ComoError 'Geminiの接続情報が未設定です。「初回設定・接続を直す」から設定できます。' 'gemini_key')
+    }
 }
 
 function Wait-ComoDocker {
     $docker = Get-ComoExecutable 'docker'
-    $check = Invoke-ComoProcess $docker @('info', '--format', '{{.ServerVersion}}') 15 @(0, 1)
+    $check = Invoke-ComoProcess $docker @('info', '--format', '{{.ServerVersion}}') 15 @(0, 1) -Quiet
     if ($check.exit_code -eq 0) { return }
     Start-Process -FilePath (Get-ComoExecutable 'desktop') | Out-Null
     $deadline = [DateTime]::UtcNow.AddMinutes(5)
     do {
         Start-Sleep -Seconds 3
-        $check = Invoke-ComoProcess $docker @('info', '--format', '{{.ServerVersion}}') 15 @(0, 1)
+        $check = Invoke-ComoProcess $docker @('info', '--format', '{{.ServerVersion}}') 15 @(0, 1) -Quiet
         if ($check.exit_code -eq 0) { return }
     } while ([DateTime]::UtcNow -lt $deadline)
-    throw 'Docker Desktopの準備が終わりませんでした。Docker Desktopを開いて表示を確認してから、もう一度「コモを開く」を押してください。'
+    throw (New-ComoError 'Docker Desktopの準備ができません。Docker Desktopを開き、表示を確認してから再試行してください。' 'docker')
 }
 
 function Invoke-ComoApi([string]$Path, [string]$Method = 'GET', [int]$TimeoutSeconds = 10) {
-    $settings = Get-ComoSettings
-    $headers = @{}
-    if ($settings.ContainsKey('CHAT_LOG_ADMIN_API_KEY')) { $headers['X-Admin-Key'] = $settings.CHAT_LOG_ADMIN_API_KEY }
-    try { return (Invoke-RestMethod -Uri ($script:ComoBaseUrl + $Path) -Method $Method -Headers $headers -TimeoutSec $TimeoutSeconds -UseBasicParsing) }
+    Add-Type -AssemblyName System.Net.Http
+    $handler = [Net.Http.HttpClientHandler]::new()
+    $handler.UseProxy = $false
+    $handler.AllowAutoRedirect = $false
+    $client = [Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
+    $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::new($Method), ($script:ComoBaseUrl + $Path))
+    $response = $null
+    try {
+        if ($Path.StartsWith('/api/admin/')) {
+            $settings = Get-ComoSettings
+            if ($settings.ContainsKey('CHAT_LOG_ADMIN_API_KEY')) {
+                [void]$request.Headers.TryAddWithoutValidation('X-Admin-Key', $settings.CHAT_LOG_ADMIN_API_KEY)
+            }
+        }
+        try {
+            $response = $client.SendAsync($request).GetAwaiter().GetResult()
+            $bytes = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        } catch {
+            throw (New-ComoError '設置PCのコモから応答がありません。少し待って再試行してください。' 'local_connection')
+        }
+        $payload = $null
+        # Decode the bytes explicitly, including error responses, on PowerShell 5.1.
+        try { $payload = $script:ComoUtf8.GetString($bytes) | ConvertFrom-Json } catch { }
+        if ($response.IsSuccessStatusCode -and $null -ne $payload) { return $payload }
+
+        $status = [int]$response.StatusCode
+        $detail = Get-ComoValue $payload 'detail'
+        $code = [string](Get-ComoValue $detail 'code' '')
+        if ($code -match '^(gemini_key|gemini_limit|gemini_model|gemini_service|network|database|storage|interrupted|unknown)$') {
+            throw (New-ComoError ([string](Get-ComoValue $detail 'message' '処理が失敗しました。')) $code $status)
+        }
+        if ($status -in @(401, 403)) {
+            throw (New-ComoError '管理用の接続設定が一致しません。「初回設定・接続を直す」から確認してください。' 'settings' $status)
+        }
+        if ($status -eq 503 -and $Path.StartsWith('/api/admin/knowledge')) {
+            throw (New-ComoError '知識の保存先を利用できません。「再起動」を試し、続く場合は担当者へ診断記録を渡してください。' 'database' $status)
+        }
+        throw (New-ComoError ('コモからの応答を確認できません（HTTP ' + $status + '）。再試行してください。') 'local_connection' $status)
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        $request.Dispose()
+        $client.Dispose()
+    }
+}
+
+function Get-ComoHealth {
+    try {
+        $health = Invoke-ComoApi '/api/health' 'GET' 2
+        if ((Get-ComoValue $health 'status') -eq 'ok') { return $health }
+    } catch { }
+    return $null
+}
+
+function Wait-ComoHealth([string]$Revision = '', [int]$Seconds = 180) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    do {
+        $health = Get-ComoHealth
+        if ($null -ne $health -and (-not $Revision -or $Revision -eq 'legacy' -or (Get-ComoValue $health 'windows_revision') -eq $Revision)) {
+            return $health
+        }
+        Start-Sleep -Seconds 2
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw (New-ComoError '用意した版のコモに接続できませんでした。「再試行」を押すか、担当者へ診断記録を渡してください。' 'local_connection')
+}
+
+function Get-ComoKnowledgeState {
+    try { return (Invoke-ComoApi '/api/admin/knowledge/readiness' 'GET' 5) }
     catch {
-        $response = Get-ComoValue $_.Exception 'Response'
-        $code = Get-ComoValue $response 'StatusCode'
-        if ($null -ne $code -and [int]$code -eq 401) { throw '管理画面の接続設定が一致しません。「コモを再起動」を実行し、改善しない場合は初回設定をした担当者へ連絡してください。' }
+        if ($_.Exception.Data['http_status'] -eq 404) { return (Invoke-ComoApi '/api/admin/knowledge/status' 'GET' 5) }
         throw
     }
 }
 
-function Wait-ComoHealth {
-    $deadline = [DateTime]::UtcNow.AddMinutes(5)
-    $healthReady = $false
-    do {
-        try {
-            $health = Invoke-ComoApi '/api/health' 'GET' 3
-            if ((Get-ComoValue $health 'status') -eq 'ok') { $healthReady = $true; break }
-        } catch { }
-        Start-Sleep -Seconds 2
-    } while ([DateTime]::UtcNow -lt $deadline)
-    if (-not $healthReady) { throw 'コモに接続できません。操作記録を開いて起動状況を確認してください。' }
-    return $health
-}
-
 function Wait-ComoKnowledge([string]$Operation) {
-    Wait-ComoHealth | Out-Null
-    $state = Invoke-ComoApi '/api/admin/knowledge/status'
     $deadline = [DateTime]::UtcNow.AddMinutes(40)
+    $state = Get-ComoKnowledgeState
     $jobId = ''
     while (Get-ComoValue $state 'initialization_required' $true) {
-        if ($null -eq (Get-ComoValue $state 'initialization_required')) { throw '管理画面の更新が必要です。「アプリを更新」を実行してください。' }
-        if ([DateTime]::UtcNow -ge $deadline) { throw '知識の準備に時間がかかっています。「知識を更新」で現在の状態を確認してください。' }
+        if ([DateTime]::UtcNow -ge $deadline) {
+            throw (New-ComoError '知識の準備が続いています。「知識を更新」で進み具合を確認できます。' 'knowledge_wait')
+        }
         $jobId = [string](Get-ComoValue $state 'active_job' '')
-        if ($jobId) {
-            Write-ComoOperation 'running' '進行中の知識の準備を確認しています。「知識を更新」で管理画面も開けます。' $Operation
-            break
-        }
+        if ($jobId) { break }
         if (Get-ComoValue $state 'busy' $false) {
-            Write-ComoOperation 'running' '知識の更新処理が始まっています。準備ができるまでお待ちください。' $Operation
-            Start-Sleep -Seconds 2
-            $state = Invoke-ComoApi '/api/admin/knowledge/status'
-            continue
-        }
-        Write-ComoOperation 'running' '初回の知識を準備しています。数分かかることがあります。' $Operation
-        try {
-            $started = Invoke-ComoApi '/api/admin/knowledge/initialize' 'POST' 30
-            $jobId = [string](Get-ComoValue $started 'job_id' '')
-            if (-not $jobId) { throw '知識の準備を開始できませんでした。管理画面の状態を確認してください。' }
-            break
-        } catch {
-            $startError = $_
-            # Another screen may have started the job after the status check.
-            # Rejoin that job instead of repeatedly posting initialize (409).
-            $state = Invoke-ComoApi '/api/admin/knowledge/status'
-            if ((Get-ComoValue $state 'active_job' '') -or (Get-ComoValue $state 'busy' $false) -or -not (Get-ComoValue $state 'initialization_required' $true)) { continue }
-            throw $startError
-        }
-    }
-    if ($jobId) {
-        $completed = $false
-        do {
-            Start-Sleep -Seconds 2
-            $job = Invoke-ComoApi ('/api/admin/knowledge/jobs/' + [Uri]::EscapeDataString($jobId))
-            $status = [string](Get-ComoValue $job 'status' '')
-            if ($status -eq 'succeeded') { $completed = $true; break }
-            if ($status -eq 'failed') {
-                $details = [string](Get-ComoValue $job 'error' '')
-                if (-not $details) { $details = [string](Get-ComoValue $job 'message' '管理画面の案内を確認してください。') }
-                throw ('知識の準備が完了しませんでした。「知識を更新」で状態を確認・再実行できます。' + [Environment]::NewLine + $details)
+            Write-ComoStep $Operation '知識の準備' '進行中の知識の処理を待っています。'
+        } else {
+            Write-ComoStep $Operation '知識の準備' '初回の知識を検索できるようにしています。'
+            try {
+                $started = Invoke-ComoApi '/api/admin/knowledge/initialize' 'POST' 30
+                $jobId = [string](Get-ComoValue $started 'job_id' '')
+                if (-not $jobId) { throw (New-ComoError '知識の準備を開始できませんでした。「知識を更新」で状態を確認してください。' 'knowledge') }
+                break
+            } catch {
+                if ($_.Exception.Data['http_status'] -ne 409) { throw }
             }
-            $message = [string](Get-ComoValue $job 'message' '知識の検索データを準備しています。')
-            Write-ComoOperation 'running' $message $Operation
-        } while ([DateTime]::UtcNow -lt $deadline)
-        if (-not $completed) { throw '知識の準備に時間がかかっています。「知識を更新」で現在の状態を確認してください。' }
+        }
+        Start-Sleep -Seconds 2
+        $state = Get-ComoKnowledgeState
     }
-    $state = Invoke-ComoApi '/api/admin/knowledge/status'
-    if (Get-ComoValue $state 'initialization_required' $true) { throw '知識の準備を確認できませんでした。「知識を更新」で状態を確認してください。' }
-    return $state
-}
-
-function Start-ComoServices([string]$Operation, [switch]$SkipKnowledgePreparation) {
-    Assert-ComoSettings
-    if ($SkipKnowledgePreparation) {
-        try {
-            $health = Invoke-ComoApi '/api/health' 'GET' 3
-            if ((Get-ComoValue $health 'status') -eq 'ok') { return $health }
-        } catch { }
-    }
-    Write-ComoOperation 'running' 'Docker Desktopの準備を待っています。' $Operation
-    Wait-ComoDocker
-    Write-ComoOperation 'running' 'コモを起動しています。初回や更新後は数分かかることがあります。' $Operation
-    Invoke-ComoCompose @('up', '-d', '--build') | Out-Null
-    if ($SkipKnowledgePreparation) {
-        Write-ComoOperation 'running' '知識の管理画面を開く準備をしています。' $Operation
-        return (Wait-ComoHealth)
-    }
-    Write-ComoOperation 'running' 'コモと知識の準備を確認しています。' $Operation
-    return (Wait-ComoKnowledge $Operation)
+    if (-not $jobId) { return $state }
+    do {
+        Start-Sleep -Seconds 2
+        $job = Invoke-ComoApi ('/api/admin/knowledge/jobs/' + [Uri]::EscapeDataString($jobId))
+        $status = [string](Get-ComoValue $job 'status' '')
+        $message = [string](Get-ComoValue $job 'message' '知識の検索データを準備しています。')
+        if ($status -eq 'succeeded') {
+            $state = Get-ComoKnowledgeState
+            if (-not (Get-ComoValue $state 'initialization_required' $true)) { return $state }
+            throw (New-ComoError '知識の準備が反映されたか確認できません。「知識を更新」で状態を確認してください。' 'knowledge')
+        }
+        if ($status -eq 'failed') {
+            throw (New-ComoError $message ([string](Get-ComoValue $job 'error_code' 'knowledge')))
+        }
+        Write-ComoStep $Operation '知識の準備' $message ([int](Get-ComoValue $job 'progress' -1))
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw (New-ComoError '知識の準備が続いています。「知識を更新」で進み具合を確認できます。' 'knowledge_wait')
 }
 
 function Assert-ComoKnowledgeIdle {
-    try { $state = Invoke-ComoApi '/api/admin/knowledge/status' 'GET' 3 }
-    catch { return } # An unavailable backend must still be recoverable.
-    if (Get-ComoValue $state 'busy' $false) { throw '知識の更新が終わってから操作してください。「知識を更新」で現在の状態を確認できます。' }
-}
-
-function Open-ComoBrowser([switch]$Knowledge) {
-    $edge = Get-ComoExecutable 'edge'
-    if ($Knowledge) {
-        $settings = Get-ComoSettings
-        $url = $script:ComoBaseUrl + '/manage/#key=' + [Uri]::EscapeDataString($settings.CHAT_LOG_ADMIN_API_KEY)
-        $arguments = @('--new-window', ('--app=' + $url))
-    } else {
-        $arguments = @('--new-window', '--start-fullscreen', ($script:ComoBaseUrl + '/?kiosk=1'))
+    try { $state = Get-ComoKnowledgeState } catch { return }
+    if (Get-ComoValue $state 'busy' $false) {
+        throw (New-ComoError '知識の更新中です。「知識を更新」で完了を確認してから操作してください。' 'busy')
     }
-    $joined = (($arguments | ForEach-Object { ConvertTo-ComoArgument $_ }) -join ' ')
-    Start-Process -FilePath $edge -ArgumentList $joined | Out-Null
 }
 
-function Update-ComoCode {
-    $git = Get-ComoExecutable 'git'
-    $dirty = Invoke-ComoProcess $git @('status', '--porcelain', '--untracked-files=no') 30
-    if ($dirty.output.Trim()) { throw 'このPCに編集中のプログラムがあります。担当者へ連絡して内容を確認してください。知識更新には「知識を更新」を使ってください。' }
-    $tracking = Invoke-ComoProcess $git @('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}') 30
-    if (-not $tracking.output.Trim()) { throw 'Gitの更新先が未設定です。初回設定をした担当者へ連絡してください。' }
-    $ahead = Invoke-ComoProcess $git @('rev-list', '--count', '@{u}..HEAD') 30
-    if ([int]$ahead.output.Trim() -gt 0) { throw '本番PCに未反映のコミットがあります。更新前に開発担当者へ連絡してください。' }
-    Write-ComoOperation 'running' 'Gitからアプリの更新を取得しています。' 'Update'
-    Invoke-ComoProcess $git @('pull', '--ff-only') 300 | Out-Null
+function Set-ComoKioskPaused([bool]$Paused) {
+    Write-ComoJson $script:ComoKioskPath @{ chat_paused = $Paused }
 }
 
 function Update-ComoRuntime {
-    $available = $false
-    $lastUpdated = $null
-    $message = '停止中です。「コモを開く」で利用を始められます。'
-    try {
-        $health = Invoke-ComoApi '/api/health' 'GET' 2
-        $state = Invoke-ComoApi '/api/admin/knowledge/status' 'GET' 3
-        $available = ((Get-ComoValue $health 'status') -eq 'ok') -and -not (Get-ComoValue $state 'initialization_required' $true)
-        if ($available) { $message = '利用できます。' } else { $message = 'コモは起動しています。知識の準備を確認してください。' }
-        $lastUpdated = Get-ComoValue $state 'last_updated'
-    } catch { }
-    Write-ComoJson $script:ComoRuntimePath @{ available = $available; message = $message; last_updated = $lastUpdated; checked_at = [DateTimeOffset]::Now.ToString('o') }
+    $health = Get-ComoHealth
+    $operation = Read-ComoJson $script:ComoOperationPath
+    $revision = [string](Get-ComoValue $health 'windows_revision' '')
+    $release = Read-ComoJson $script:ComoReleasePath
+    $setup = Read-ComoJson $script:ComoSetupPath
+    $state = $null
+    $message = 'コモへの接続を確認できません。「コモを開く」で起動できます。'
+    if ($null -ne $health) {
+        try { $state = Get-ComoKnowledgeState } catch { }
+        if (Get-ComoValue $health 'kiosk_chat_paused' $false) {
+            $message = 'コモは起動中です。質問の受付を休止しています。'
+        } elseif ($null -eq $state) {
+            $message = 'コモは起動中です。知識の状態を確認できません。'
+        } elseif (Get-ComoValue $state 'initialization_required' $true) {
+            $message = 'コモは起動中です。知識の準備が必要です。'
+        } else {
+            $message = 'コモを利用できます。'
+        }
+    } elseif ((Get-ComoValue $operation 'operation') -eq 'Stop' -and (Get-ComoValue $operation 'phase') -eq 'succeeded') {
+        $message = '利用を終了しました。'
+    }
+    $runningRevision = ''
+    if ($null -ne $health) { $runningRevision = if ($revision) { $revision } else { '旧版' } }
+    Write-ComoJson $script:ComoRuntimePath @{
+        message = $message; server_up = ($null -ne $health)
+        initialized = (Get-ComoValue $state 'initialized' $false)
+        last_updated = (Get-ComoValue $state 'last_updated')
+        running_revision = $runningRevision
+        installed_revision = (Get-ComoHead -AllowUnavailable)
+        previous_revision = (Get-ComoValue $release 'previous' '')
+        failed_revision = (Get-ComoValue $release 'failed' '')
+        auto_start = (Get-ComoValue $setup 'auto_start' '')
+        checked_at = [DateTimeOffset]::Now.ToString('o')
+    }
 }

@@ -19,6 +19,7 @@ if str(BACKEND) not in sys.path:
 
 from chu_ai import knowledge_admin_api as api
 from chu_ai.services.knowledge_admin_service import KnowledgeConflict
+from chu_ai.services.generation_service import api_key_is_valid
 
 
 SECRET = "unit-test-admin-key-keep-private"
@@ -193,6 +194,18 @@ class KnowledgeAdminApiTests(TestCase):
             self.assertNotIn(dsn, text)
             self.assertNotIn("private-db", text)
         self.assertIn("初期設定", response.json()["detail"])
+
+    def test_connection_check_reports_provider_error_without_returning_its_text(self):
+        class RateLimit(RuntimeError):
+            code = 429
+
+        self.assertTrue(api_key_is_valid("AQ" + "z" * 38))
+        self.assertFalse(api_key_is_valid("設定で受け取った値"))
+        with mock.patch("chu_ai.services.embedding_service.embed_query_text", side_effect=RateLimit("private-provider-text")):
+            response = self.client.post(PREFIX + "/check-connection", headers=self.headers)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"]["code"], "gemini_limit")
+        self.assertNotIn("private-provider-text", response.text)
 
     def test_publish_restore_and_initialize_queue_jobs(self):
         response = self.client.post(PREFIX + "/publish", headers=self.headers, json={"preview_id": PREVIEW, "base_version": VERSION})
