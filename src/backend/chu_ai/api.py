@@ -332,7 +332,7 @@ def knowledge_template() -> Response:
     from chu_ai.knowledge_template import create_knowledge_template
     return Response(create_knowledge_template(),
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote("コモ知識更新テンプレート.docx")})
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote("コモの案内を書くひな形.docx")})
 
 
 app.mount("/manage", StaticFiles(directory=FRONTEND_DIR / "manage", html=True), name="knowledge-management")

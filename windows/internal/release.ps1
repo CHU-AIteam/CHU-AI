@@ -51,19 +51,18 @@ function Update-ComoCode {
 function Check-ComoUpdate {
     $git = Get-ComoExecutable 'git'
     try {
-        $tracking = Invoke-ComoProcess $git @('rev-parse', '--short=12', '@{u}') 25 -Quiet
+        Invoke-ComoProcess $git @('rev-parse', '--short=12', '@{u}') 25 -Quiet | Out-Null
         Invoke-ComoProcess $git @('fetch', '--quiet') 90 -Environment @{ GIT_TERMINAL_PROMPT = '0' } | Out-Null
-        $tracking = Invoke-ComoProcess $git @('rev-parse', '--short=12', '@{u}') 25 -Quiet
         $counts = (Invoke-ComoProcess $git @('rev-list', '--left-right', '--count', 'HEAD...@{u}') 25 -Quiet).output.Trim() -split '\s+'
         if ([int]$counts[0] -gt 0) { return 'このPCに配布版にない変更があります。開発担当者に確認してください。' }
         if ([int]$counts[1] -gt 0) {
-            return ('新しい配布版 ' + $tracking.output.Trim() + ' があります。「アプリを更新」で反映できます。')
+            return '新しいコモが届いています。「コモ本体を更新する」を押してください。'
         }
         $release = Read-ComoJson $script:ComoReleasePath
         if ((Get-ComoValue $release 'failed') -or ((Get-ComoValue $release 'current') -and (Get-ComoValue $release 'current') -ne (Get-ComoHead))) {
-            return '取得済みの版をまだ利用していません。「アプリを更新」から適用できます。'
+            return 'このパソコンに届いたコモを使えます。「コモ本体を更新する」を押してください。'
         }
-        return '取得済みの版が最新です。'
+        return 'コモは最新の状態です。'
     } catch {
         throw (New-ComoError '更新の有無を確認できません。ネット接続とGitの取得先を確認してください。' 'git')
     }
@@ -105,7 +104,7 @@ function Start-ComoApplication(
     try {
         if (-not $matching) {
             Assert-ComoKnowledgeIdle
-            Write-ComoStep $Operation '起動の準備' 'Docker Desktopの準備を待っています。'
+            Write-ComoStep $Operation 'コモを開く準備' 'このパソコンでコモを開く準備をしています。'
             Wait-ComoDocker
             if (-not $fallback -and $null -ne $health -and -not (Get-ComoValue $health 'windows_revision')) {
                 try {
@@ -117,12 +116,12 @@ function Start-ComoApplication(
             }
             if (-not (Test-ComoImage $candidate)) {
                 if ($Rollback -or $candidate -ne $checkout) {
-                    throw (New-ComoError '保持していたアプリの版が見つかりません。「アプリを更新」で現在の版を準備できます。' 'release')
+                    throw (New-ComoError '保存していたコモが見つかりません。「コモ本体を更新する」で今届いているコモを用意できます。' 'release')
                 }
-                Write-ComoStep $Operation 'アプリの準備' 'この版のコモを準備しています。初回や更新時は数分かかることがあります。'
+                Write-ComoStep $Operation 'コモを用意する' 'このパソコンで使うコモを用意しています。初めてのときや更新したときは数分かかることがあります。'
                 Invoke-ComoCompose @('build', 'chu-ai') -Revision $candidate | Out-Null
             }
-            Write-ComoStep $Operation 'アプリの起動' 'コモのサービスを起動しています。'
+            Write-ComoStep $Operation 'コモを開く' 'コモを開いています。少しお待ちください。'
             $composeArgs = @('up', '-d', '--no-build')
             if ($Restart) { $composeArgs += '--force-recreate' }
             $switched = $true
@@ -135,13 +134,13 @@ function Start-ComoApplication(
         $canProbe = $candidate -ne 'legacy'
         $verifyCandidate = $CheckChat -or (-not $Rollback -and $candidate -ne $current -and [bool]$fallback)
         if ($verifyCandidate -and $canProbe) {
-            Write-ComoStep $Operation '接続の確認' 'Geminiへ接続できるか確認しています。'
+            Write-ComoStep $Operation 'つながるか確かめる' '質問に答えるための通信ができるか確かめています。'
             Invoke-ComoApi '/api/admin/knowledge/check-connection' 'POST' 75 | Out-Null
         }
-        Write-ComoStep $Operation '知識の確認' 'コモが知識を使える状態か確認しています。'
+        Write-ComoStep $Operation '案内を使えるか確かめる' 'コモが回答に使う案内を確かめています。'
         Wait-ComoKnowledge $Operation | Out-Null
         if (($verifyCandidate -or $pauseWasOn) -and $canProbe) {
-            Write-ComoStep $Operation '回答の確認' '試しの質問にコモが回答できるか確認しています。'
+            Write-ComoStep $Operation '試しの質問' 'コモが試しの質問に答えられるか確かめています。'
             Invoke-ComoApi '/api/admin/knowledge/check-chat' 'POST' 120 | Out-Null
         }
         Set-ComoKioskPaused $false
@@ -159,7 +158,7 @@ function Start-ComoApplication(
         if ($fallback -and $candidate -ne $fallback -and -not $HealthOnly) {
             try {
                 if ($switched) {
-                    Write-ComoStep $Operation '前の版へ復旧' '直前に使っていた版を開き直しています。'
+                    Write-ComoStep $Operation '前のコモに戻る' 'ひとつ前のコモで使えるようにしています。'
                     if (-not (Test-ComoImage $fallback)) { throw '前の版のイメージがありません。' }
                     Invoke-ComoCompose @('up', '-d', '--no-build') -Revision $fallback | Out-Null
                     Wait-ComoHealth $fallback 90 | Out-Null

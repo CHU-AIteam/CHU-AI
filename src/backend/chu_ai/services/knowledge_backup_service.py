@@ -17,7 +17,7 @@ MAX_BACKUP_BYTES = 64 * 1024 * 1024
 MAX_RESTORED_BYTES = 256 * 1024 * 1024
 TALLY_IDS = ("super-daikichi", "daikichi", "kichi", "chukichi", "shokichi", "suekichi")
 MAX_TALLY = 2**53 - 1
-INVALID_BACKUP = "コモのバックアップを読み取れませんでした。保存したバックアップファイルを確認してください。"
+INVALID_BACKUP = "保存した内容を読み取れませんでした。コモ管理で保存したファイルを選び直してください。"
 
 
 class Document(BaseModel):
@@ -52,14 +52,14 @@ def validate_tally(counts: dict[str, int] | None) -> dict[str, int] | None:
     if (set(counts) != set(TALLY_IDS)
             or any(type(value) is not int or not 0 <= value <= MAX_TALLY for value in counts.values())
             or sum(counts.values()) > MAX_TALLY):
-        raise ValueError("おみくじ集計の形式を確認できません。")
+        raise ValueError("おみくじの回数を読み取れません。")
     return counts
 
 
 def create_backup(manager: KnowledgeManager, tally: dict[str, int] | None) -> bytes:
     active = manager.read_active()
     if not active:
-        raise ValueError("初期の知識を準備してからバックアップを保存してください。")
+        raise ValueError("最初の案内を準備してから保存してください。")
     archive = {
         "format": "chat-como-backup-1", "created_at": _now(),
         "versions": [], "bodies": {}, "originals": {}, "tally": validate_tally(tally),
@@ -81,7 +81,7 @@ def create_backup(manager: KnowledgeManager, tally: dict[str, int] | None) -> by
         archive["versions"].append(version)
     output = json.dumps(archive, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(output) > MAX_BACKUP_BYTES:
-        raise ValueError("バックアップが64MBを超えています。担当者に保存方法を確認してください。")
+        raise ValueError("保存する内容が多すぎます。担当者に保存方法を確かめてください。")
     read_backup(output)
     return output
 
@@ -137,6 +137,6 @@ def restore_backup(manager: KnowledgeManager, data: bytes, base: str | None) -> 
             parent, _ = manager._make_version(parent, version.label, items, version.created_at.isoformat())
         # Link the imported history to the original local version. The indexer
         # makes the new snapshot active only after the search data commits.
-        return manager._snapshot(parent, "バックアップから復元")
+        return manager._snapshot(parent, "保存した内容に戻す")
 
     return manager._queue("backup", base, build)

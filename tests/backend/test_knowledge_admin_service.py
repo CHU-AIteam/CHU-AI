@@ -264,7 +264,7 @@ class KnowledgeAdminTests(TestCase):
         self.assertEqual([item["id"] for item in history], [fourth, third, second, first])
         self.assertEqual([item["current"] for item in history], [True, False, False, False])
         self.assertEqual(len(self.manager.status()["documents"]), 2)
-        self.assertIn("復元", history[0]["label"])
+        self.assertIn("以前の案内に戻す", history[0]["label"])
 
     def test_restarting_manager_and_changing_git_seed_does_not_replace_runtime_data(self):
         self.initialize()
@@ -396,7 +396,7 @@ class KnowledgeAdminTests(TestCase):
             path.unlink()
         job = self.track(self.manager.initialize())
         self.assertEqual(job["status"], "failed", job)
-        self.assertIn("初期知識", job["message"])
+        self.assertIn("最初の案内が見つかりません", job["message"])
         self.assertIsNone(self.index.read_active())
         self.assertEqual(self.index.calls, [])
 

@@ -18,12 +18,12 @@ $script:ComoStartupActions = @('Setup', 'Open', 'Restart', 'Update', 'Rollback')
 if ($env:OS -ne 'Windows_NT') { throw 'コモ管理はWindows専用です。' }
 
 function Show-ComoVisitor([string]$Operation, $Health, [switch]$Limited, [switch]$Refresh) {
-    Write-ComoStep $Operation '画面表示' 'Edgeでコモを開いています。'
+    Write-ComoStep $Operation '画面を開く' '来場者が使うコモの画面を開いています。'
     $legacy = -not (Get-ComoValue $Health 'windows_revision' '')
     $foreground = Open-ComoBrowser -Limited:$Limited -Refresh:$Refresh -Legacy:$legacy
-    if (-not $foreground) { return 'タスクバーでコモの画面を選んでください。' }
-    if ($Limited) { return 'コモとおみくじを開きました。質問の受付は休止しています。' }
-    return 'コモを利用できます。'
+    if (-not $foreground) { return '画面の下に並んでいるアイコンから、コモの画面を選んでください。' }
+    if ($Limited) { return 'コモとおみくじを開きました。いまは質問への回答をお休みしています。' }
+    return 'コモを使えます。'
 }
 
 if ($Worker) {
@@ -50,7 +50,7 @@ if ($Worker) {
         switch ($Action) {
             'Setup' {
                 Assert-ComoKnowledgeIdle
-                Write-ComoStep $Action '必要なソフトと設定' 'Docker Desktop、Edge、Gitと接続設定を確認しています。'
+                Write-ComoStep $Action 'パソコンの準備' 'このパソコンでコモを使うための準備を確かめています。'
                 Initialize-ComoSettings $key
                 $key = $null
                 Install-ComoShortcuts
@@ -58,20 +58,20 @@ if ($Worker) {
                 $opened = Show-ComoVisitor $Action $health -Refresh
                 $method = Set-ComoAutoStart (-not $NoAutoStart)
                 Write-ComoSetupState $method $true
-                $message = '初回設定が完了しました。' + $opened
+                $message = '試しの質問に答えられました。' + $opened
             }
             'DisableAutoStart' {
                 $method = Set-ComoAutoStart $false
                 $setup = Read-ComoJson $script:ComoSetupPath
                 Write-ComoSetupState $method ([bool](Get-ComoValue $setup 'verified' $false))
-                $message = 'ログイン後の自動起動を解除しました。'
+                $message = 'パソコンにログインしたとき、自動でコモを開く設定を止めました。'
             }
             'Stop' {
                 Assert-ComoKnowledgeIdle
-                Write-ComoStep $Action '利用の終了' 'コモの画面とサービスを終了しています。'
+                Write-ComoStep $Action 'コモを閉じる' '今日の利用を終えています。少しお待ちください。'
                 Close-ComoBrowser
                 Invoke-ComoCompose @('stop') | Out-Null
-                $message = '本日の利用を終了しました。Windowsをシャットダウンできます。'
+                $message = '今日の利用を終えました。パソコンの電源を切って大丈夫です。'
             }
             'Restart' {
                 $health = Start-ComoApplication $Action -Restart
@@ -80,33 +80,33 @@ if ($Worker) {
             'Knowledge' {
                 Start-ComoApplication $Action -HealthOnly | Out-Null
                 Open-ComoBrowser -Knowledge | Out-Null
-                $message = '知識の更新画面を開きました。'
+                $message = '案内を更新する画面を開きました。'
             }
             'Limited' {
                 $health = Get-ComoHealth
                 if ($null -eq $health -or -not (Get-ComoValue $health 'windows_revision' '')) {
-                    throw (New-ComoError 'いまはコモの画面を開けません。先に起動のエラーを確認してください。' 'local_connection')
+                    throw (New-ComoError 'いまはコモの画面を開けません。「コモを開く」を押してから、画面の案内に沿って進んでください。' 'local_connection')
                 }
                 Set-ComoKioskPaused $true
                 $message = Show-ComoVisitor $Action $health -Limited
             }
             'CheckUpdate' {
-                Write-ComoStep $Action '配布版の確認' '新しいアプリが配布されているか確認しています。'
+                Write-ComoStep $Action '新しい更新を探す' '新しいコモが届いているか調べています。'
                 $message = Check-ComoUpdate
             }
             'Update' {
                 Assert-ComoKnowledgeIdle
                 Assert-ComoSettings
-                Write-ComoStep $Action 'アプリの取得' 'Gitから配布版を取得しています。'
+                Write-ComoStep $Action '新しいコモを受け取る' '更新に必要なものを受け取っています。'
                 Update-ComoCode
                 $health = Start-ComoApplication $Action -ApplyCheckout -CheckChat
                 $opened = Show-ComoVisitor $Action $health -Refresh
-                $message = 'アプリの更新を確認しました。' + $opened
+                $message = 'コモ本体を更新しました。' + $opened
             }
             'Rollback' {
                 $health = Start-ComoApplication $Action -Rollback
                 $opened = Show-ComoVisitor $Action $health -Refresh
-                $message = '前の版へ切り替えました。' + $opened
+                $message = 'ひとつ前のコモに戻しました。' + $opened
             }
             default {
                 $health = Start-ComoApplication $Action
@@ -144,14 +144,17 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 $guiMutex = New-Object Threading.Mutex($false, ('Local\ComoManager-' + (Get-ComoId)))
+$setupRequest = [Threading.EventWaitHandle]::new($false, [Threading.EventResetMode]::AutoReset, ('Local\ComoShowSetup-' + (Get-ComoId)))
 $guiLocked = $false
 try { $guiLocked = $guiMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $guiLocked = $true }
 if (-not $guiLocked) {
+    if ($Action -eq 'Setup') { [void]$setupRequest.Set() }
     Initialize-ComoWindowAccess
     foreach ($item in [ComoWindowAccess]::Find('コモ管理', 'powershell')) {
         [void][ComoWindowAccess]::Activate($item)
     }
     $guiMutex.Dispose()
+    $setupRequest.Dispose()
     exit 0
 }
 
@@ -166,10 +169,12 @@ $script:ComoActiveWorker = $null
 $script:ComoStatusWorker = $null
 $script:ComoKnowledgeWorker = $null
 $script:ComoRetryAction = ''
+$script:ComoRetryCode = ''
 $script:ComoLastStatusAt = [DateTime]::MinValue
 $script:ComoScreenMessage = ''
 $script:ComoCloseWhenReady = ($Action -eq 'AutoStart')
 $script:ComoPendingAction = if ($Action -eq 'AutoStart') { 'Open' } elseif ($Action -in @('Setup', 'Manage')) { '' } else { $Action }
+$controls.AutoStartCheck.IsChecked = (Get-ComoValue (Read-ComoJson $script:ComoSetupPath) 'auto_start' '') -ne 'disabled'
 
 function New-ComoWorker([string]$WorkerAction, [switch]$NavigationOnly, [string]$GeminiKey = '', [switch]$DisableAutoStart) {
     $info = New-Object Diagnostics.ProcessStartInfo
@@ -189,15 +194,37 @@ function New-ComoWorker([string]$WorkerAction, [switch]$NavigationOnly, [string]
     return $process
 }
 
-function Show-ComoSetup {
+function Show-ComoKeyEntry {
+    $controls.ChangeKeyButton.Visibility = 'Collapsed'
+    $controls.KeyEntryPanel.Visibility = 'Visible'
+    [void]$controls.GeminiKey.Focus()
+}
+
+function Show-ComoDailyView {
+    $controls.SetupPanel.Visibility = 'Collapsed'
+    $controls.GeminiKey.Clear()
+    $controls.ScreenHeading.Text = 'コモ管理'
+    $controls.DailyPanel.Visibility = 'Visible'
+}
+
+function Test-ComoSetupKey {
     $settings = Get-ComoSettings
-    $hasKey = $settings.ContainsKey('API_KEY') -and $settings.API_KEY -notmatch '^(|your-gemini-api-key)$'
+    return ($settings.ContainsKey('API_KEY') -and $settings.API_KEY -notmatch '^(|your-gemini-api-key)$')
+}
+
+function Show-ComoSetup([switch]$ChangeKey) {
+    $hasKey = Test-ComoSetupKey
+    $script:ComoScreenMessage = ''
+    $controls.ScreenHeading.Text = 'コモの初回設定'
+    $controls.DailyPanel.Visibility = 'Collapsed'
+    $controls.Maintenance.IsExpanded = $false
     $controls.KeyHint.Text = if ($hasKey) {
-        '既存のGeminiキーを使う場合は空欄で進めます。変更するときだけ新しいキーを入力してください。'
-    } else { '担当者から受け取った Gemini の接続キーを入力してください。' }
-    $setup = Read-ComoJson $script:ComoSetupPath
-    $controls.AutoStartCheck.IsChecked = (Get-ComoValue $setup 'auto_start' '') -ne 'disabled'
+        'このパソコンに、コモをつなぐためのコードが入っています。'
+    } else { 'コモを使うために、初めてのときだけコードを入れます。' }
     $controls.SetupPanel.Visibility = 'Visible'
+    $controls.ChangeKeyButton.Visibility = if ($hasKey -and -not $ChangeKey) { 'Visible' } else { 'Collapsed' }
+    $controls.KeyEntryPanel.Visibility = 'Collapsed'
+    if (-not $hasKey -or $ChangeKey) { Show-ComoKeyEntry }
     $controls.SetupPanel.BringIntoView()
 }
 
@@ -215,8 +242,8 @@ function Invoke-ComoGuiAction([string]$SelectedAction, [string]$GeminiKey = '', 
 
 function Show-ComoDiagnostic {
     $picker = New-Object Microsoft.Win32.SaveFileDialog
-    $picker.Title = '問い合わせ用の記録を保存'
-    $picker.FileName = 'コモ診断-' + (Get-Date -Format 'yyyyMMdd-HHmm') + '.txt'
+    $picker.Title = '担当者に渡す記録を保存'
+    $picker.FileName = 'コモの記録-' + (Get-Date -Format 'yyyyMMdd-HHmm') + '.txt'
     $picker.Filter = 'テキスト ファイル (*.txt)|*.txt'
     if ($picker.ShowDialog($window) -ne $true) { return }
     try {
@@ -241,7 +268,7 @@ function Show-ComoDiagnostic {
             )
         }
         [IO.File]::WriteAllText($picker.FileName, (Protect-ComoText ($report -join [Environment]::NewLine)), [Text.UTF8Encoding]::new($true))
-        $script:ComoScreenMessage = '問い合わせ用の記録を保存しました。'
+        $script:ComoScreenMessage = '記録を保存しました。保存したファイルを担当者に渡してください。'
     } catch {
         $script:ComoScreenMessage = '記録を保存できません。書き込める場所を選び直してください。'
     }
@@ -262,19 +289,31 @@ $controls.StopButton.Add_Click({ Invoke-ComoGuiAction 'Stop' })
 $controls.LimitedButton.Add_Click({ Invoke-ComoGuiAction 'Limited' })
 $controls.RestartButton.Add_Click({ Invoke-ComoGuiAction 'Restart' })
 $controls.CheckUpdateButton.Add_Click({ Invoke-ComoGuiAction 'CheckUpdate' })
-$controls.RepairButton.Add_Click({ Show-ComoSetup })
 $controls.SetupDetailsButton.Add_Click({ Show-ComoSetup })
-$controls.HideSetupButton.Add_Click({ $controls.SetupPanel.Visibility = 'Collapsed'; $controls.GeminiKey.Clear() })
+$controls.HideSetupButton.Add_Click({ $script:ComoScreenMessage = ''; Show-ComoDailyView })
+$controls.ChangeKeyButton.Add_Click({ Show-ComoKeyEntry })
 $controls.DiagnosticButton.Add_Click({ Show-ComoDiagnostic })
+$controls.RecoveryDiagnosticButton.Add_Click({ Show-ComoDiagnostic })
 $controls.GuideButton.Add_Click({ Start-Process (Join-Path $PSScriptRoot 'quick-guide.html') })
 $controls.SetupButton.Add_Click({
     $key = $controls.GeminiKey.Password.Trim()
+    if ($controls.KeyEntryPanel.Visibility -eq 'Visible' -and -not $key) {
+        $script:ComoScreenMessage = '担当者から受け取ったコードを入力欄に貼り付けてください。'
+        [void]$controls.GeminiKey.Focus()
+        return
+    }
     $controls.GeminiKey.Clear()
     $controls.SetupPanel.Visibility = 'Collapsed'
     Invoke-ComoGuiAction 'Setup' -GeminiKey $key -DisableAutoStart:($controls.AutoStartCheck.IsChecked -ne $true)
 })
 $controls.RetryButton.Add_Click({
-    if ($script:ComoRetryAction -eq 'Setup') { Show-ComoSetup }
+    if ($script:ComoRetryCode -eq 'gemini_key') { Show-ComoSetup -ChangeKey }
+    elseif ($script:ComoRetryCode -eq 'settings') { Show-ComoSetup }
+    elseif ($script:ComoRetryAction -eq 'Setup') {
+        if (Test-ComoSetupKey) {
+            Invoke-ComoGuiAction 'Setup' -DisableAutoStart:($controls.AutoStartCheck.IsChecked -ne $true)
+        } else { Show-ComoSetup }
+    }
     elseif ($script:ComoRetryAction) { Invoke-ComoGuiAction $script:ComoRetryAction }
 })
 $controls.KnowledgeButton.Add_Click({
@@ -282,16 +321,16 @@ $controls.KnowledgeButton.Add_Click({
     if ($null -ne $script:ComoActiveWorker -or (Get-ComoRunningSnapshot (Read-ComoJson $script:ComoOperationPath))) {
         if ($null -eq $script:ComoKnowledgeWorker) {
             try { $script:ComoKnowledgeWorker = New-ComoWorker 'Knowledge' -NavigationOnly }
-            catch { $script:ComoScreenMessage = '知識の画面を開けませんでした。少し待って再試行してください。' }
+            catch { $script:ComoScreenMessage = '案内を更新する画面を開けませんでした。少し待って「案内を更新する」を押してください。' }
         }
     } else { Invoke-ComoGuiAction 'Knowledge' }
 })
 $controls.UpdateButton.Add_Click({
-    $answer = [Windows.MessageBox]::Show($window, '更新時にコモの画面を開き直します。利用者がいないときに実行してください。', 'アプリを更新', 'OKCancel', 'Information')
+    $answer = [Windows.MessageBox]::Show($window, 'コモの画面を開き直します。来場者が使っていないことを確かめてから進んでください。', 'コモ本体を更新する', 'OKCancel', 'Information')
     if ($answer -eq 'OK') { Invoke-ComoGuiAction 'Update' }
 })
 $controls.RollbackButton.Add_Click({
-    $answer = [Windows.MessageBox]::Show($window, 'コモを直前のアプリの版で開き直します。', '前の版で開く', 'OKCancel', 'Information')
+    $answer = [Windows.MessageBox]::Show($window, 'ひとつ前のコモで開き直します。案内とおみくじの回数は残ります。', 'ひとつ前のコモに戻す', 'OKCancel', 'Information')
     if ($answer -eq 'OK') { Invoke-ComoGuiAction 'Rollback' }
 })
 
@@ -311,15 +350,16 @@ $timer.Add_Tick({
         $process.Dispose()
         Set-Variable -Name $slot -Scope Script -Value $null
         if ($slot -eq 'ComoKnowledgeWorker' -and $exit -ne 0) {
-            $script:ComoScreenMessage = '知識の画面を開けませんでした。起動状況を確認して、もう一度押してください。'
+            $script:ComoScreenMessage = '案内を更新する画面を開けませんでした。少し待って「案内を更新する」を押してください。'
         }
         if ($slot -eq 'ComoActiveWorker') {
             $script:ComoLastStatusAt = [DateTime]::MinValue
+            if ($controls.SetupPanel.Visibility -ne 'Visible') { Show-ComoDailyView }
             if ($exit -eq 2) { $script:ComoScreenMessage = '別の操作が進行中です。少しお待ちください。' }
             elseif ($exit -ne 0) {
                 $finished = Read-ComoJson $script:ComoOperationPath
                 if ((Get-ComoValue $finished 'process_id') -ne $workerId -or (Get-ComoValue $finished 'phase') -ne 'failed') {
-                    $script:ComoScreenMessage = '処理の結果を保存できませんでした。フォルダへの書き込みと、保守欄の診断記録を確認してください。'
+                    $script:ComoScreenMessage = '結果を確かめられませんでした。「設定・困ったとき」から担当者に渡す記録を保存できます。'
                 }
             }
             if ($script:ComoCloseWhenReady -and $exit -eq 0) { $window.Close(); return }
@@ -330,16 +370,17 @@ $timer.Add_Tick({
     $operation = Read-ComoJson $script:ComoOperationPath
     $phase = Get-ComoValue $operation 'phase' ''
     $running = ($null -ne $script:ComoActiveWorker) -or (Get-ComoRunningSnapshot $operation)
+    if (-not $running -and $setupRequest.WaitOne(0)) { Show-ComoSetup }
     $interrupted = $phase -eq 'running' -and -not $running
     $failure = Read-ComoJson $script:ComoFailurePath
     if ($phase -eq 'failed' -or $interrupted) { $failure = $operation }
-    $issueText = [string](Get-ComoValue $failure 'message' '')
-    $controls.RuntimeText.Text = '状態を確認しています。'
+    $issueText = Get-ComoFailureNotice $failure
+    $controls.RuntimeText.Text = 'コモを使えるか確認しています。'
     $runtime = Read-ComoJson $script:ComoRuntimePath
     if ($null -ne $runtime) { $controls.RuntimeText.Text = [string](Get-ComoValue $runtime 'message' '') }
 
     $controls.StatusText.Text = if ($script:ComoScreenMessage) { $script:ComoScreenMessage }
-        elseif ($interrupted) { '前回の操作が途中で止まりました。再試行できます。' }
+        elseif ($interrupted) { '前回の操作が途中で止まりました。もう一度試せます。' }
         elseif ($running -or $phase -eq 'succeeded') { [string](Get-ComoValue $operation 'message' '操作を開始しています。') }
         else { '' }
     $controls.StepText.Text = ''
@@ -359,7 +400,7 @@ $timer.Add_Tick({
     $controls.UpdatedText.Text = ''
     try {
         $timestamp = [DateTimeOffset]::Parse((Get-ComoValue $runtime 'last_updated')).ToLocalTime()
-        $controls.UpdatedText.Text = '知識の最終更新 ' + $timestamp.ToString('yyyy/MM/dd HH:mm')
+        $controls.UpdatedText.Text = '案内を最後に変えた日 ' + $timestamp.ToString('yyyy/MM/dd HH:mm')
     } catch { }
     $installed = [string](Get-ComoValue $runtime 'installed_revision' '')
     $active = [string](Get-ComoValue $runtime 'running_revision' '')
@@ -371,12 +412,16 @@ $timer.Add_Tick({
     if ($previous) { $controls.VersionText.Text += ' ／ 戻せる版 ' + $previous }
     if (Get-ComoValue $runtime 'failed_revision' '') { $controls.VersionText.Text += ' ／ 最後に失敗した版 ' + (Get-ComoValue $runtime 'failed_revision') }
 
-    $controls.RecoveryPanel.Visibility = if (-not $running -and ($issueText -or $interrupted)) { 'Visible' } else { 'Collapsed' }
+    $controls.RecoveryPanel.Visibility = if (-not $running -and $controls.SetupPanel.Visibility -ne 'Visible' -and ($issueText -or $interrupted)) { 'Visible' } else { 'Collapsed' }
     $controls.FailureText.Text = $issueText
     if ($interrupted) { $controls.FailureText.Text = '前回の操作の続きを試してください。' }
     $script:ComoRetryAction = [string](Get-ComoValue $failure 'operation' '')
+    $script:ComoRetryCode = [string](Get-ComoValue $failure 'code' '')
+    $controls.RetryButton.Content = if ($script:ComoRetryCode -eq 'gemini_key') { 'つなぐためのコードを見直す' }
+        elseif ($script:ComoRetryCode -eq 'settings') { '最初の設定を見直す' }
+        else { 'もう一度試す' }
     $controls.RetryButton.IsEnabled = $script:ComoRetryAction -in @('Setup', 'Open', 'Restart', 'Stop', 'Knowledge', 'CheckUpdate', 'Update', 'Rollback', 'Limited')
-    $controls.LimitedButton.IsEnabled = (Get-ComoValue $runtime 'server_up' $false) -and $active -and $active -ne '旧版'
+    $controls.LimitedButton.Visibility = if ((Get-ComoValue $runtime 'chat_paused' $false) -and $active -and $active -ne '旧版') { 'Visible' } else { 'Collapsed' }
     foreach ($name in @('OpenButton', 'StopButton', 'RestartButton', 'CheckUpdateButton', 'UpdateButton', 'SetupButton', 'SetupDetailsButton')) {
         $controls[$name].IsEnabled = -not $running
     }
@@ -399,4 +444,5 @@ try {
     }
     if ($guiLocked) { $guiMutex.ReleaseMutex() }
     $guiMutex.Dispose()
+    $setupRequest.Dispose()
 }

@@ -1,74 +1,109 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="コモ管理"
-        Width="760" Height="700" MinWidth="570" MinHeight="420" WindowStartupLocation="CenterScreen"
+        Width="720" Height="710" MinWidth="520" MinHeight="430" WindowStartupLocation="CenterScreen"
         Background="#F4F7FB" FontFamily="Yu Gothic UI" FontSize="15">
   <Window.Resources>
     <Style TargetType="Button">
       <Setter Property="MinHeight" Value="43"/>
-      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="Padding" Value="12,8"/>
       <Setter Property="Margin" Value="0,4,8,4"/>
       <Setter Property="FontSize" Value="15"/>
       <Setter Property="Background" Value="White"/>
       <Setter Property="BorderBrush" Value="#C5D2E5"/>
       <Setter Property="Foreground" Value="#24436B"/>
     </Style>
+    <Style x:Key="DailyButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="MinHeight" Value="69"/>
+      <Setter Property="Padding" Value="16,10"/>
+      <Setter Property="Margin" Value="0,4"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
   </Window.Resources>
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="26,22">
-      <TextBlock Text="コモ管理" FontSize="30" FontWeight="Bold" Foreground="#194596"/>
-      <Border Margin="0,14,0,12" Padding="16" CornerRadius="9" Background="#E8F0FC">
+      <TextBlock x:Name="ScreenHeading" Text="コモ管理" FontSize="30" FontWeight="Bold" Foreground="#194596"/>
+
+      <Border x:Name="SetupPanel" Background="White" Padding="16" Margin="0,14,0,0" CornerRadius="9" Visibility="Collapsed">
         <StackPanel>
-          <TextBlock x:Name="RuntimeText" Text="状態を確認しています。" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"/>
-          <TextBlock x:Name="StepText" Margin="0,9,0,0" Foreground="#2459BD" TextWrapping="Wrap"/>
-          <TextBlock x:Name="StatusText" TextWrapping="Wrap" Margin="0,4,0,0"/>
+          <TextBlock Text="コモを開く準備をして、試しの質問に答えられるか確かめます。" TextWrapping="Wrap"/>
+          <TextBlock x:Name="KeyHint" TextWrapping="Wrap" Margin="0,12,0,4"/>
+          <Button x:Name="ChangeKeyButton" Content="別のコードを使う" HorizontalAlignment="Left" Visibility="Collapsed"/>
+          <StackPanel x:Name="KeyEntryPanel" Visibility="Collapsed">
+            <TextBlock Text="コモをつなぐためのコード" FontWeight="SemiBold" Margin="0,4,0,4"/>
+            <PasswordBox x:Name="GeminiKey" MaxLength="256" Padding="10,7" AutomationProperties.Name="コモをつなぐためのコード"/>
+            <TextBlock Text="設置を担当した人から受け取ったコードを貼り付けます。" Foreground="#57677D" TextWrapping="Wrap" Margin="0,4,0,0"/>
+          </StackPanel>
+          <CheckBox x:Name="AutoStartCheck" IsChecked="True" Margin="0,14,0,0">
+            <TextBlock Text="パソコンにログインしたら、自動でコモを開く" TextWrapping="Wrap"/>
+          </CheckBox>
+          <WrapPanel Margin="0,9,0,0">
+            <Button x:Name="SetupButton" Content="準備を始める" Background="#2459BD" Foreground="White"/>
+            <Button x:Name="HideSetupButton" Content="コモ管理に戻る"/>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Padding="16" Margin="0,14,0,12" CornerRadius="9" Background="#E8F0FC">
+        <StackPanel>
+          <TextBlock x:Name="RuntimeText" Text="コモを使えるか確認しています。" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <TextBlock x:Name="StepText" Margin="0,6,0,0" Foreground="#2459BD" TextWrapping="Wrap"/>
+          <TextBlock x:Name="StatusText" TextWrapping="Wrap"/>
           <ProgressBar x:Name="BusyBar" Height="6" Margin="0,9,0,0" Visibility="Collapsed" IsIndeterminate="True"/>
           <TextBlock x:Name="UpdatedText" Margin="0,5,0,0" FontSize="13" Foreground="#586C85" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
-      <UniformGrid Columns="3">
-        <Button x:Name="OpenButton" Content="コモを開く" Background="#2459BD" Foreground="White" FontSize="17" MinHeight="58" FontWeight="SemiBold"/>
-        <Button x:Name="KnowledgeButton" Content="知識を更新" FontSize="17" MinHeight="58" FontWeight="SemiBold"/>
-        <Button x:Name="StopButton" Content="本日の利用を終了" FontSize="17" MinHeight="58"/>
-      </UniformGrid>
-      <TextBlock Text="全画面のコモからは Ctrl + Alt + K（または Alt + Tab）でここに戻れます。" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="#57677D" FontSize="13"/>
 
-      <Border x:Name="RecoveryPanel" Background="#FFF3E4" Padding="15" Margin="0,14,0,0" CornerRadius="9" Visibility="Collapsed">
+      <Border x:Name="RecoveryPanel" Background="#FFF3E4" Padding="15" Margin="0,0,0,12" CornerRadius="9" Visibility="Collapsed">
         <StackPanel>
           <TextBlock x:Name="FailureText" Foreground="#783E17" TextWrapping="Wrap"/>
           <WrapPanel Margin="0,7,0,0">
-            <Button x:Name="RetryButton" Content="再試行"/>
-            <Button x:Name="LimitedButton" Content="コモとおみくじだけ開く"/>
-            <Button x:Name="RepairButton" Content="初回設定・接続を直す"/>
+            <Button x:Name="RetryButton" Content="もう一度試す" Background="#2459BD" Foreground="White"/>
+            <Button x:Name="LimitedButton" Content="コモとおみくじを開く"/>
+            <Button x:Name="RecoveryDiagnosticButton" Content="担当者に渡す記録を保存"/>
           </WrapPanel>
         </StackPanel>
       </Border>
 
-      <Border x:Name="SetupPanel" Background="White" Padding="16" Margin="0,14,0,0" CornerRadius="9" Visibility="Collapsed">
-        <StackPanel>
-          <TextBlock Text="初回設定・接続を直す" FontWeight="Bold" FontSize="20" Foreground="#194596"/>
-          <TextBlock Text="必要なソフト → 接続 → 知識の準備 → 試しの質問の順に確認します。" TextWrapping="Wrap" Margin="0,6,0,0"/>
-          <TextBlock x:Name="KeyHint" TextWrapping="Wrap" Margin="0,10,0,4"/>
-          <PasswordBox x:Name="GeminiKey" MaxLength="256" Padding="10,7" AutomationProperties.Name="Geminiの接続キー"/>
-          <CheckBox x:Name="AutoStartCheck" Content="Windowsへのログイン後に自動でコモを開く" IsChecked="True" Margin="0,10,0,0"/>
-          <WrapPanel Margin="0,7,0,0">
-            <Button x:Name="SetupButton" Content="設定して動作を確認" Background="#2459BD" Foreground="White"/>
-            <Button x:Name="HideSetupButton" Content="閉じる"/>
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+      <StackPanel x:Name="DailyPanel">
+        <Button x:Name="OpenButton" Style="{StaticResource DailyButton}" Background="#2459BD" Foreground="White">
+          <StackPanel>
+            <TextBlock Text="コモを開く" FontSize="19" FontWeight="SemiBold"/>
+            <TextBlock Text="来場者が使う画面を開きます。" TextWrapping="Wrap" Margin="0,2,0,0"/>
+          </StackPanel>
+        </Button>
+        <Button x:Name="KnowledgeButton" Style="{StaticResource DailyButton}">
+          <StackPanel>
+            <TextBlock Text="案内を更新する" FontSize="19" FontWeight="SemiBold"/>
+            <TextBlock Text="USBのWordを使って、コモが答える内容を変えます。" TextWrapping="Wrap" Margin="0,2,0,0"/>
+          </StackPanel>
+        </Button>
+        <Button x:Name="StopButton" Style="{StaticResource DailyButton}">
+          <StackPanel>
+            <TextBlock Text="今日の利用を終える" FontSize="19" FontWeight="SemiBold"/>
+            <TextBlock Text="コモを閉じて、電源を切れる状態にします。" TextWrapping="Wrap" Margin="0,2,0,0"/>
+          </StackPanel>
+        </Button>
+        <TextBlock Text="コモの全画面からここへ戻るときは、CtrlキーとAltキーを押したままKキーを押します。"
+                   TextWrapping="Wrap" Foreground="#57677D" FontSize="13" Margin="0,8,0,0"/>
+      </StackPanel>
 
-      <Expander x:Name="Maintenance" Header="保守・困ったとき" Margin="0,17,0,0">
+      <Expander x:Name="Maintenance" Header="設定・困ったとき" Margin="0,17,0,0">
         <StackPanel Margin="0,8,0,0">
-          <TextBlock x:Name="VersionText" FontSize="13" TextWrapping="Wrap" Foreground="#57677D"/>
-          <WrapPanel Margin="0,6,0,0">
-            <Button x:Name="RestartButton" Content="再起動"/>
-            <Button x:Name="SetupDetailsButton" Content="初回設定・接続を直す"/>
-            <Button x:Name="CheckUpdateButton" Content="更新の有無を確認"/>
-            <Button x:Name="UpdateButton" Content="アプリを更新"/>
-            <Button x:Name="RollbackButton" Content="前の版で開く"/>
-            <Button x:Name="DiagnosticButton" Content="問い合わせ用の記録を保存"/>
-            <Button x:Name="GuideButton" Content="使い方"/>
+          <WrapPanel>
+            <Button x:Name="RestartButton" Content="コモを開き直す"/>
+            <Button x:Name="SetupDetailsButton" Content="最初の設定を見直す"/>
+            <Button x:Name="CheckUpdateButton" Content="新しい更新があるか調べる"/>
+            <Button x:Name="UpdateButton" Content="コモ本体を更新する"/>
+            <Button x:Name="RollbackButton" Content="ひとつ前のコモに戻す"
+                    ToolTip="以前使っていたコモがこのパソコンに残っているときに戻せます。" ToolTipService.ShowOnDisabled="True"/>
+            <Button x:Name="DiagnosticButton" Content="担当者に渡す記録を保存"/>
+            <Button x:Name="GuideButton" Content="使い方を見る"/>
           </WrapPanel>
+          <TextBlock Text="前の案内に戻したり、案内とおみくじの回数をUSBに保存したりするときは「案内を更新する」から進みます。"
+                     FontSize="13" Foreground="#57677D" TextWrapping="Wrap" Margin="0,7,0,0"/>
+          <Expander Header="担当者向けの詳しい情報" Margin="0,9,0,0">
+            <TextBlock x:Name="VersionText" FontSize="13" TextWrapping="Wrap" Foreground="#57677D" Margin="0,6,0,0"/>
+          </Expander>
         </StackPanel>
       </Expander>
     </StackPanel>

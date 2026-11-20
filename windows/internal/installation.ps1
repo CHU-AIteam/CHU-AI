@@ -27,7 +27,7 @@ function Initialize-ComoSettings([string]$GeminiKey) {
     }
     if ($GeminiKey) {
         if ($GeminiKey -notmatch '^[A-Za-z0-9_-]{30,256}$') {
-            throw (New-ComoError 'Geminiのキーを確認してください。説明や引用符を含めず、キーだけを貼り付けてください。' 'gemini_key')
+            throw (New-ComoError '担当者から受け取ったコードだけを貼り付けてください。' 'gemini_key')
         }
         Set-ComoSetting 'API_KEY' $GeminiKey
     }
@@ -36,7 +36,7 @@ function Initialize-ComoSettings([string]$GeminiKey) {
 
 function Install-ComoShortcuts {
     $desktop = [Environment]::GetFolderPath('DesktopDirectory')
-    New-ComoShortcut (Join-Path $desktop 'コモ管理.lnk') 'Manage' 'コモの起動・終了、USBからの知識更新（Ctrl+Alt+K）'
+    New-ComoShortcut (Join-Path $desktop 'コモ管理.lnk') 'Manage' 'コモを開く・案内を更新する・今日の利用を終える'
     $guideUri = [Uri]::new((Join-Path (Split-Path $script:ComoLauncherPath) 'quick-guide.html')).AbsoluteUri
     [IO.File]::WriteAllLines((Join-Path $desktop 'コモの使い方.url'), @('[InternetShortcut]', "URL=$guideUri"), $script:ComoUtf8)
 }

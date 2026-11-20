@@ -53,3 +53,33 @@
 }
 .removed-line { background: #fff0f1; color: #742d3d; }
 .added-line { background: #e7f4eb; color: #215738; }
+
+.optional-help {
+  margin-top: 14px;
+}
+.optional-help > summary {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 6px 0;
+  color: var(--blue-dark);
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.optional-help > p {
+  margin-top: 4px;
+}
+.view-tabs {
+  flex-wrap: wrap;
+}
+#file-steps {
+  margin: 20px 0 0;
+}
+.destination-help {
+  margin-top: 7px;
+}
+.backup-actions button {
+  max-width: 100%;
+  white-space: normal;
+}

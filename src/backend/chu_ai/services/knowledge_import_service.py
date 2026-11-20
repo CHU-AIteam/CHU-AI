@@ -65,8 +65,8 @@ def _decode_text(data: bytes) -> tuple[str, list[str]]:
         try:
             text = data.decode("cp932")
         except UnicodeError as error:
-            raise ValueError("文字コードを読み取れませんでした。UTF-8のテキスト形式で保存し直してください。") from error
-        warnings.append("Windows日本語（Shift_JIS）として読み取りました。文字化けがないか、内容を確認してください。")
+            raise ValueError("ファイルの文字を読めませんでした。文字をWordに貼り付け、新しいWord文書として保存してから選び直してください。") from error
+        warnings.append("文字が崩れていないか、内容を確かめてください。")
     return _normalize_text(text), warnings
 
 
@@ -86,11 +86,11 @@ def _check_archive(archive: zipfile.ZipFile) -> set[str]:
             or stat.S_ISLNK(info.external_attr >> 16)
             or name in names
         ):
-            raise ValueError("Wordファイルの構造を確認できません。Wordで新しい.docxとして保存し直してください。")
+            raise ValueError("Wordの内容を読めません。Wordで開き、別の名前で保存し直してください。")
         if info.flag_bits & 1:
-            raise ValueError("暗号化されたWordファイルは読み取れません。パスワードを外した.docxを選んでください。")
+            raise ValueError("パスワードで保護されたWordは読めません。保護されていない文書を選んでください。")
         if info.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
-            raise ValueError("このWordファイルの圧縮形式には対応していません。Wordで保存し直してください。")
+            raise ValueError("このファイルは読めません。Wordで開いて保存し直してください。")
         names.add(name)
     if not {"[Content_Types].xml", "word/document.xml"}.issubset(names):
         raise ValueError("Word形式のファイルではありません。.docx形式で保存し直してください。")
@@ -103,7 +103,7 @@ def _read_xml(archive: zipfile.ZipFile, name: str) -> ET.Element:
     data = archive.read(name)
     declarations = data.replace(b"\x00", b"").upper()
     if b"<!DOCTYPE" in declarations or b"<!ENTITY" in declarations:
-        raise ValueError("このWordファイルには対応していないXML定義が含まれています。Wordで保存し直してください。")
+        raise ValueError("このWordは読めません。Wordで開いて保存し直してください。")
     try:
         iterator = ET.iterparse(BytesIO(data), events=("start", "end"))
         count = 0
@@ -251,16 +251,16 @@ def _decode_docx(data: bytes) -> tuple[str, list[str]]:
             content = _normalize_text("\n\n".join(part for part in parts if part))
             tags = {element.tag for element in document.iter()}
             if any(name.startswith(("word/media/", "word/embeddings/", "word/charts/")) for name in names) or tags.intersection({_W + "drawing", _W + "pict", _W + "object", _W + "txbxContent", _W + "altChunk"}):
-                warnings.append("画像・図形・テキストボックス・埋め込み資料の内容は取り込んでいません。必要な情報を本文に入力し、プレビューで確認してください。")
+                warnings.append("画像や図の中の文字、文書に入れた別のファイルは読めません。必要な言葉を案内の本文に書き足してください。")
             if any(re.match(r"word/(?:header\d*|footer\d*|footnotes|endnotes)\.xml$", name) for name in names):
-                warnings.append("ヘッダー・フッター・脚注は取り込んでいません。必要な情報が本文にあるか確認してください。")
+                warnings.append("ページの上や下に入れた補足や脚注は読めません。必要な言葉が本文にあるか確かめてください。")
             if tags.intersection({_W + "ins", _W + "del", _W + "moveFrom", _W + "moveTo"}):
-                warnings.append("変更履歴があります。追加後の文章を取り込んでいます。意図した内容かプレビューで確認してください。")
+                warnings.append("Wordに変更履歴があるため、書き直したあとの文章を読み取りました。使いたい内容か確かめてください。")
             if any(tag.endswith("}oMath") or tag.endswith("}oMathPara") for tag in tags):
                 warnings.append("数式は取り込んでいません。必要な内容を本文の文章として入力してください。")
             return content, warnings
     except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError, NotImplementedError, OSError, EOFError) as error:
-        raise ValueError("Wordファイルを読み取れません。暗号化されていない.docxとして保存し直してください。") from error
+        raise ValueError("Wordを読み取れません。Wordで開き、パスワードで保護しない文書を保存して選び直してください。") from error
 
 
 def import_knowledge_file(filename: str, data: bytes) -> dict:
@@ -268,7 +268,7 @@ def import_knowledge_file(filename: str, data: bytes) -> dict:
     source_filename = _filename(filename)
     extension = PurePosixPath(source_filename).suffix.casefold()
     if extension == ".doc":
-        raise ValueError("古いWord（.doc）には対応していません。Wordで.docx形式として保存し直してください。")
+        raise ValueError("古いWord文書は読み取れません。Wordで開き、「名前を付けて保存」で種類を「Word 文書」にしてから選び直してください。")
     if extension not in {".docx", ".txt", ".md"}:
         raise ValueError("対応形式はWord（.docx）・テキスト（.txt）・Markdown（.md）です。対応形式のファイルを選んでください。")
     if not isinstance(data, (bytes, bytearray)) or not data:

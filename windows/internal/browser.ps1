@@ -75,7 +75,7 @@ function Close-ComoBrowser {
         if ([ComoWindowAccess]::Find($title, 'msedge').Length -eq 0) { return }
         Start-Sleep -Milliseconds 200
     }
-    throw (New-ComoError 'コモの画面を閉じられませんでした。コモ画面だけを閉じてから、もう一度「本日の利用を終了」を押してください。' 'browser')
+    throw (New-ComoError 'コモの画面を閉じられませんでした。コモの画面を閉じてから「今日の利用を終える」を押してください。' 'browser')
 }
 
 function Open-ComoBrowser([switch]$Knowledge, [switch]$Limited, [switch]$Refresh, [switch]$Legacy) {
