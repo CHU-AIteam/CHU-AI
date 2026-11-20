@@ -6,8 +6,9 @@
     <meta name="referrer" content="no-referrer">
     <meta name="robots" content="noindex, nofollow">
     <title>コモ管理 — 知識の更新</title>
-    <link rel="stylesheet" href="./manage.css?v=20261108-01">
-    <script src="./manage.js?v=20261108-01" defer></script>
+    <link rel="stylesheet" href="./manage.css?v=20261120-01">
+    <script src="../omikuji-tally.js?v=20261120-01" defer></script>
+    <script src="./manage.js?v=20261120-01" defer></script>
   </head>
   <body>
     <div class="management-shell">
@@ -44,6 +45,8 @@
             <button type="button" id="refresh" class="text-button">最新の状態を確認</button>
           </section>
 
+          <p class="last-operation" id="last-operation" hidden></p>
+
           <section id="initialize-panel" class="initialize-panel" hidden aria-labelledby="initialize-title">
             <div><h2 id="initialize-title">最初の準備を行います</h2><p>コモが知識を探せるように準備します。完了するまで、この画面を開いたままお待ちください。</p></div>
             <button type="button" class="primary-button" id="initialize" data-mutation>準備をはじめる</button>
@@ -61,6 +64,7 @@
             <button type="button" role="tab" id="tab-import" aria-controls="view-import" aria-selected="true" data-view="import">USB・ファイルから更新</button>
             <button type="button" role="tab" id="tab-edit" aria-controls="view-edit" aria-selected="false" tabindex="-1" data-view="edit">登録済みの知識を編集</button>
             <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1" data-view="history">更新履歴・元に戻す</button>
+            <button type="button" role="tab" id="tab-backup" aria-controls="view-backup" aria-selected="false" tabindex="-1" data-view="backup">バックアップ</button>
           </div>
 
           <section id="view-import" class="view-panel" role="tabpanel" aria-labelledby="tab-import">
@@ -76,14 +80,7 @@
                 </div>
                 <p class="helper file-types">対応：Word（.docx）、テキスト（.txt）、Markdown（.md）／1ファイル8MBまで。PDF・Excelは現在取り込めません。</p>
                 <p class="reading-note">Wordは本文・見出し・表を読み取ります。画像・スキャン・図形に書かれた情報は読み取れません。次の画面で内容を確認してください。</p>
-                <div class="target-picker">
-                  <h3>この資料をどう反映しますか？</h3>
-                  <label class="radio-label"><input type="radio" name="import-mode" value="add" checked data-mutation>新しい知識として追加する</label>
-                  <label class="radio-label"><input type="radio" name="import-mode" value="replace" data-mutation>登録済みの知識を置き換える</label>
-                  <label for="import-target" class="field-label" id="import-target-label" hidden>置き換える知識</label>
-                  <select id="import-target" aria-labelledby="import-target-label" hidden disabled data-mutation><option value="">置き換える知識を選んでください</option></select>
-                </div>
-                <div class="form-actions"><button type="submit" class="primary-button" id="read-file" data-mutation>内容を読み取って確認する <span aria-hidden="true">→</span></button></div>
+                <div class="form-actions"><button type="submit" class="secondary-button" id="read-file" data-mutation hidden>ファイルを読み取り直す</button></div>
               </fieldset>
             </form>
           </section>
@@ -102,6 +99,18 @@
                   <label for="edit-content" class="field-label">内容</label><textarea id="edit-content" rows="13" maxlength="200000" required data-mutation></textarea>
                   <p class="helper" id="editor-source"></p>
                   <div class="form-actions"><button type="submit" class="primary-button" data-mutation>変更内容を確認する <span aria-hidden="true">→</span></button></div>
+                  <details class="document-actions" id="document-actions" hidden>
+                    <summary>この資料の利用設定・履歴</summary>
+                    <div class="document-action-row">
+                      <button type="button" class="secondary-button" id="set-enabled" data-mutation>この資料の利用を停止</button>
+                      <button type="button" class="text-button" id="show-doc-history" data-mutation>この資料の履歴を表示</button>
+                    </div>
+                    <div id="doc-history" hidden>
+                      <label for="doc-version" class="field-label">以前の版</label>
+                      <select id="doc-version" data-mutation></select>
+                      <div class="form-actions"><button type="button" class="secondary-button" id="restore-doc" data-mutation>この資料だけ元に戻す</button></div>
+                    </div>
+                  </details>
                 </fieldset>
               </form>
             </div>
@@ -118,10 +127,42 @@
             </section>
           </section>
 
+          <section id="view-backup" class="view-panel" role="tabpanel" aria-labelledby="tab-backup" hidden>
+            <div class="section-heading">
+              <div><h2>バックアップ</h2><p>資料・更新履歴・このブラウザーのおみくじ集計を1つのファイルで保存できます。</p></div>
+            </div>
+            <div class="backup-actions">
+              <button type="button" class="primary-button" id="save-backup">バックアップを保存</button>
+              <button type="button" class="secondary-button" id="choose-backup">復元するファイルを選ぶ</button>
+              <input type="file" id="backup-file" class="visually-hidden" accept=".json" tabindex="-1" aria-label="復元するバックアップ">
+            </div>
+            <section class="restore-panel" id="backup-review" hidden>
+              <h3>このバックアップを復元しますか？</h3>
+              <p id="backup-description"></p>
+              <p>選んだファイルの知識へ切り替えます。おみくじ集計が入っている場合は、その回数に戻ります。</p>
+              <label class="confirmation"><input type="checkbox" id="backup-confirm">復元する日付と内容を確認しました</label>
+              <div class="form-actions"><button type="button" class="secondary-button" id="cancel-backup">やめる</button><button type="button" class="primary-button" id="restore-backup" disabled>復元を開始する</button></div>
+            </section>
+          </section>
+
           <section class="view-panel preview-panel" id="preview-panel" aria-labelledby="preview-heading" hidden>
             <div class="section-heading"><div><span class="eyebrow" id="preview-action">内容を確認</span><h2 id="preview-heading" tabindex="-1">コモに反映する内容を確認してください</h2></div><button type="button" class="text-button" id="back-to-form">選び直す・編集に戻る</button></div>
             <p class="preview-summary" id="preview-summary"></p>
             <ul id="preview-warnings" class="preview-warnings" hidden></ul>
+            <details class="document-actions" id="import-destination" hidden>
+              <summary id="destination-summary">反映先を変更</summary>
+              <label for="import-target" class="field-label">置き換える資料</label>
+              <select id="import-target" data-mutation></select>
+              <div class="document-action-row">
+                <button type="button" class="secondary-button" id="use-replacement" data-mutation>この資料を置き換える</button>
+                <button type="button" class="secondary-button" id="use-add" data-mutation>新しい資料として追加する</button>
+              </div>
+            </details>
+            <section class="change-summary" id="change-summary" hidden>
+              <h3>変わる箇所</h3>
+              <p id="change-note"></p>
+              <ul id="change-lines"></ul>
+            </section>
             <div class="comparison-layout">
               <section id="previous-section" hidden><h3>現在の内容</h3><pre class="previous-content" id="previous-content"></pre></section>
               <section><h3>反映する内容</h3><label for="preview-title" class="field-label">タイトル</label><input id="preview-title" type="text" maxlength="150" required data-mutation><label for="preview-content" class="field-label">内容</label><textarea id="preview-content" rows="14" maxlength="200000" data-mutation></textarea><p class="helper">読み取れなかった情報や間違いがあれば、ここで修正できます。修正後はもう一度確認してから反映します。</p></section>

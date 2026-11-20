@@ -13,10 +13,15 @@ from pathlib import Path
 from typing import Callable
 
 from chu_ai.config import KNOWLEDGE_DIR, KNOWLEDGE_INDEX_FILE, KNOWLEDGE_RUNTIME_DIR
+from chu_ai.services.operations_service import diagnose
 
 
 class KnowledgeConflict(ValueError):
     """再確認が必要な競合・実行中の操作。"""
+
+
+class KnowledgeJobNotFound(ValueError):
+    """すでに存在しないジョブ。"""
 
 
 def _now() -> str:
@@ -62,9 +67,16 @@ def _identifier(value: str) -> str:
 
 
 def _document_id(value: str) -> str:
-    if not value or len(value) > 200 or value.startswith(".") or "/" in value or "\\" in value or not value.endswith(".md") or value == KNOWLEDGE_INDEX_FILE:
+    if (not isinstance(value, str) or not value or len(value) > 200
+            or value.startswith(".") or re.search(r'[\x00-\x1f<>:"/\\|?*]', value)
+            or not value.endswith(".md") or value == KNOWLEDGE_INDEX_FILE):
         raise ValueError("指定した知識が見つかりません。")
     return value
+
+
+def _record_path(directory: Path, record: dict) -> Path:
+    folder = "documents" if record.get("enabled", True) else "inactive"
+    return directory / folder / _document_id(record["id"])
 
 
 def _title(content: str, fallback: str) -> str:
@@ -86,6 +98,7 @@ def index_version(directory: Path, version_id: str, expected_version: str | None
         build_document_chunks, get_indexed_document_hashes,
         ingest_knowledge_to_hybrid_store,
     )
+    progress("database", "保存されている検索データを確認しています。", 18)
     previous = get_indexed_document_hashes()
     payloads = []
     for path in sorted(directory.glob("*.md")):
@@ -171,10 +184,10 @@ class KnowledgeManager:
                               "source_filename": path.name, "origin": "初期知識", "updated_at": None})
         return documents
 
-    def history(self, current: str | None) -> list[dict]:
+    def history(self, current: str | None, limit: int = 128) -> list[dict]:
         result, seen = [], set()
         cursor = current
-        while cursor and cursor not in seen and len(result) < 100:
+        while cursor and cursor not in seen and len(result) < limit:
             seen.add(cursor)
             _, manifest = self._version(cursor)
             result.append({"id": cursor, "created_at": manifest["created_at"],
@@ -183,15 +196,26 @@ class KnowledgeManager:
             cursor = manifest.get("parent_version")
         return result
 
-    def status(self) -> dict:
+    def readiness(self) -> dict:
         active = self.read_active()
         manifest = self._version(active)[1] if active else None
         job = self._busy_job()
+        try:
+            last = self.job(_read(self.root / "last_job.json")["id"])
+        except (ValueError, KeyError):
+            last = None
         return {"initialized": bool(active), "initialization_required": not bool(active),
                 "active_version": active, "last_updated": manifest["created_at"] if manifest else None,
+                "busy": bool(job), "active_job": job if job != "starting" else None,
+                "last_job": last}
+
+    def status(self) -> dict:
+        summary = self.readiness()
+        active = summary["active_version"]
+        manifest = self._version(active)[1] if active else None
+        return {**summary,
                 "documents": manifest["documents"] if manifest else self._seed_documents(),
-                "history": self.history(active), "busy": bool(job),
-                "active_job": job if job != "starting" else None}
+                "history": self.history(active)}
 
     def document(self, document_id: str) -> dict:
         _document_id(document_id)
@@ -199,27 +223,46 @@ class KnowledgeManager:
         if active:
             directory, manifest = self._version(active)
             records = manifest["documents"]
-            source = directory / "documents"
         else:
-            records, source = self._seed_documents(), self.seed
+            records = self._seed_documents()
         record = next((item for item in records if item["id"] == document_id), None)
         if not record:
             raise ValueError("指定した知識が見つかりません。画面を読み直してください。")
-        return {**record, "content": (source / document_id).read_text(encoding="utf-8")}
+        path = _record_path(directory, record) if active else self.seed / document_id
+        return {**record, "content": path.read_text(encoding="utf-8")}
+
+    def save_original(self, name: str, data: bytes) -> None:
+        destination = self.root / "originals" / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            return
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as out:
+                path = Path(out.name)
+                out.write(data)
+                out.flush()
+                os.fsync(out.fileno())
+            os.replace(path, destination)
+        finally:
+            if path is not None:
+                path.unlink(missing_ok=True)
 
     def preview(self, *, filename: str | None = None, data: bytes | None = None,
                 title: str | None = None, content: str | None = None,
-                target_id: str | None = None, source_preview_id: str | None = None) -> dict:
+                target_id: str | None = None, source_preview_id: str | None = None,
+                import_mode: str | None = None) -> dict:
         from chu_ai.services.knowledge_import_service import import_knowledge_file
         active = self.read_active()
         if not active:
             raise KnowledgeConflict("最初に「初期知識を準備」を実行してください。")
-        _, manifest = self._version(active)
+        directory, manifest = self._version(active)
         records = manifest["documents"]
         warnings = []
         original = None
         draft_id = None
         inherited = None
+        suggestions = []
         if source_preview_id:
             inherited = _read(self.root / "previews" / (_identifier(source_preview_id) + ".json"))
             if inherited["base_version"] != active:
@@ -228,10 +271,11 @@ class KnowledgeManager:
                 raise KnowledgeConflict("確認画面の有効期限が切れました。ファイルを選び直してください。")
             original = inherited.get("original")
             warnings = inherited.get("warnings", [])
-            if inherited["action"] == "replace":
+            if inherited["action"] == "replace" and import_mode not in {"add", "choose"}:
                 target_id = target_id or inherited["target_id"]
-            else:
+            elif inherited["action"] == "add":
                 draft_id = inherited["target_id"]
+            suggestions = inherited.get("suggested_targets", [])
         if filename is not None and data is not None:
             imported = import_knowledge_file(filename, data)
             filename, title, content = imported["source_filename"], imported["title"], imported["content"]
@@ -240,23 +284,19 @@ class KnowledgeManager:
                 title = title[:150]
                 warnings = [*warnings, "タイトルを150文字に短縮しました。内容を確認してください。"]
             original = hashlib.sha256(data).hexdigest() + Path(filename).suffix.lower()
-            destination = self.root / "originals" / original
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            # Identical uploads share an immutable original.
-            if not destination.exists():
-                with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as out:
-                    temporary = Path(out.name)
-                    out.write(data)
-                    out.flush()
-                    os.fsync(out.fileno())
-                os.replace(temporary, destination)
-            if not target_id:
-                matches = [item for item in records if Path(item["source_filename"]).stem.casefold() == Path(filename).stem.casefold()]
-                if len(matches) == 1:
-                    target_id = matches[0]["id"]
-                    warnings = [*warnings, "同じ名前の知識があるため、置き換えとして確認してください。"]
+            self.save_original(original, data)
+            matches = [item for item in records if Path(item["source_filename"]).stem.casefold() == Path(filename).stem.casefold()]
+            suggestions = [{"id": item["id"], "title": item["title"]} for item in matches]
+            # Preserve the older preview API for existing management windows.
+            if import_mode is None and not target_id and len(matches) == 1:
+                target_id = matches[0]["id"]
+                warnings = [*warnings, "同じ名前の知識があるため、置き換えとして確認してください。"]
         else:
             filename = inherited.get("source_filename") if inherited else None
+        if import_mode == "replace" and not target_id:
+            raise ValueError("置き換える知識を選んでください。")
+        if import_mode in {"add", "choose"}:
+            target_id = None
         content = (content or "").strip()
         if not content or len(content) > 200000 or "\x00" in content:
             raise ValueError("本文は空にせず、20万文字以内で入力してください。")
@@ -273,12 +313,15 @@ class KnowledgeManager:
         if target_id and not old:
             raise ValueError("置き換える知識が見つかりません。選び直してください。")
         document_id = target_id or draft_id or f"user_{uuid.uuid4().hex[:16]}.md"
+        previous_content = _record_path(directory, old).read_text(encoding="utf-8") if old else ""
         preview = {"preview_id": uuid.uuid4().hex, "created_at": _now(), "base_version": active,
                    "title": title, "content": content, "source_filename": filename or (old["source_filename"] if old else title + ".md"),
                    "target_id": document_id, "action": "replace" if old else "add", "warnings": warnings,
-                   "previous_content": self.document(document_id)["content"] if old else "",
+                   "previous_content": previous_content, "previous_title": old["title"] if old else "",
+                   "suggested_targets": suggestions, "needs_target_confirmation": import_mode == "choose" and bool(suggestions),
                    "original": original or (old.get("original") if old else None),
-                   "origin": "USB・ファイル" if original else "画面で編集"}
+                   "origin": "USB・ファイル" if original else "画面で編集",
+                   "enabled": old.get("enabled", True) if old else True}
         _write(self.root / "previews" / (preview["preview_id"] + ".json"), preview)
         return preview
 
@@ -286,35 +329,43 @@ class KnowledgeManager:
         if self.read_active() != expected:
             raise KnowledgeConflict("別の操作で知識が更新されました。画面を読み直し、変更内容を再確認してください。")
 
-    def _snapshot(self, base: str | None, label: str, change: dict | None = None,
-                  restore_from: str | None = None) -> tuple[str, Path]:
-        version_id, created_at = uuid.uuid4().hex, _now()
+    def _make_version(self, parent: str | None, label: str, items: list[tuple[dict, str]],
+                      created_at: str | None = None) -> tuple[str, Path]:
+        if not any(record.get("enabled", True) for record, _ in items):
+            raise ValueError("利用できる資料がありません。少なくとも1件の資料を利用中にしてください。")
+        version_id, created_at = uuid.uuid4().hex, created_at or _now()
         directory = self.root / "versions" / version_id
         documents_dir = directory / "documents"
         documents_dir.mkdir(parents=True)
+        records = []
+        for item, content in items:
+            record = dict(item)
+            if not record.get("updated_at"):
+                record["updated_at"] = created_at
+            _write(_record_path(directory, record), content)
+            records.append(record)
+        _write(directory / "manifest.json", {"id": version_id, "created_at": created_at, "parent_version": parent,
+                                             "label": label, "documents": sorted(records, key=lambda item: item["id"])})
+        return version_id, documents_dir
+
+    def _snapshot(self, base: str | None, label: str, change: dict | None = None,
+                  restore_from: str | None = None) -> tuple[str, Path]:
         source_version = restore_from or base
         if source_version:
             source, manifest = self._version(source_version)
-            records = [dict(item) for item in manifest["documents"]]
-            source = source / "documents"
+            items = [(item, _record_path(source, item).read_text(encoding="utf-8"))
+                     for item in manifest["documents"]]
         else:
-            source, records = self.seed, self._seed_documents()
-        if not records and change is None:
+            items = [(item, (self.seed / _document_id(item["id"])).read_text(encoding="utf-8"))
+                     for item in self._seed_documents()]
+        if not items and change is None:
             raise ValueError("初期知識が見つかりません。配置されたファイルを確認してください。")
-        for item in records:
-            _document_id(item["id"])
-            _write(documents_dir / item["id"], (source / item["id"]).read_text(encoding="utf-8"))
         if change:
             record = {key: change[key] for key in ("title", "source_filename", "original", "origin")}
-            record.update(id=change["target_id"], updated_at=created_at)
-            records = [item for item in records if item["id"] != record["id"]] + [record]
-            _write(documents_dir / record["id"], change["content"] + "\n")
-        for item in records:
-            if not item.get("updated_at"):
-                item["updated_at"] = created_at
-        _write(directory / "manifest.json", {"id": version_id, "created_at": created_at, "parent_version": base,
-                                             "label": label, "documents": sorted(records, key=lambda item: item["id"])})
-        return version_id, documents_dir
+            record.update(id=change["target_id"], enabled=change.get("enabled", True))
+            items = [(item, text) for item, text in items if item["id"] != record["id"]]
+            items.append((record, change["content"].rstrip() + "\n"))
+        return self._make_version(base, label, items)
 
     def _queue(self, kind: str, expected: str | None, build: Callable) -> str:
         with self._mutex:
@@ -327,6 +378,7 @@ class KnowledgeManager:
                 job = {"id": job_id, "kind": kind, "status": "queued", "stage": "queued", "message": "更新の準備をしています。",
                        "progress": 0, "created_at": _now(), "updated_at": _now(), "target_version": None}
                 _write(self.root / "jobs" / (job_id + ".json"), job)
+                _write(self.root / "last_job.json", {"id": job_id})
                 os.lseek(fd, 0, os.SEEK_SET)
                 os.ftruncate(fd, 0)
                 os.write(fd, json.dumps({"job_id": job_id}).encode("utf-8"))
@@ -358,9 +410,13 @@ class KnowledgeManager:
                         job.update(status="succeeded", stage="complete", progress=100,
                                    message="知識を更新できました。", result={"version_id": job["target_version"]})
                     else:
-                        message = str(error) if isinstance(error, ValueError) else "更新に失敗しました。通信状態や初期設定を確認して、もう一度お試しください。現在の知識はそのまま利用できます。"
-                        job.update(status="failed", stage="failed", message=message, error=message, updated_at=_now())
-                        print(f"Knowledge update failed: {type(error).__name__}")
+                        issue = diagnose(error, job["stage"])
+                        message = str(error) if type(error) is ValueError and job["stage"] == "preparing" else str(issue)
+                        if expected:
+                            message += "現在の知識はそのまま利用できます。"
+                        job.update(status="failed", stage="failed", message=message, error=message,
+                                   error_code=issue.code, updated_at=_now())
+                        print(f"Knowledge update failed: {issue.code} ({type(error).__name__})")
                 finally:
                     try:
                         _write(self.root / "jobs" / (job_id + ".json"), job)
@@ -391,6 +447,8 @@ class KnowledgeManager:
             raise KnowledgeConflict("確認画面の有効期限が切れました。ファイルを選び直してください。")
         if preview["base_version"] != base_version:
             raise KnowledgeConflict("変更内容をもう一度確認してください。")
+        if preview.get("needs_target_confirmation"):
+            raise ValueError("新しく追加するか、登録済みの資料を置き換えるか選んでください。")
         if "【記入欄】" in preview["content"] or "【記入欄】" in preview["title"]:
             raise ValueError("Wordテンプレートの【記入欄】を記入するか、使わない項目を削除してから反映してください。確認画面でも本文を直せます。")
         return self._queue("publish", base_version, lambda: self._snapshot(base_version, f"知識を{'変更' if preview['action'] == 'replace' else '追加'}：{preview['title']}", preview))
@@ -401,14 +459,55 @@ class KnowledgeManager:
             raise ValueError("指定した更新履歴が見つかりません。")
         return self._queue("restore", base_version, lambda: self._snapshot(base_version, "以前の知識に復元", restore_from=version_id))
 
+    def document_history(self, document_id: str) -> list[dict]:
+        _document_id(document_id)
+        versions = []
+        previous = None
+        for entry in self.history(self.read_active()):
+            directory, manifest = self._version(entry["id"])
+            item = next((item for item in manifest["documents"] if item["id"] == document_id), None)
+            if not item:
+                continue
+            content = _record_path(directory, item).read_text(encoding="utf-8")
+            signature = (item["title"], item.get("enabled", True), content)
+            if signature != previous:
+                versions.append({**entry, "title": item["title"], "enabled": signature[1]})
+                previous = signature
+        return versions
+
+    def update_document(self, document_id: str, base_version: str | None, *,
+                        enabled: bool | None = None, version_id: str | None = None) -> str:
+        _document_id(document_id)
+        self._check_base(base_version)
+        if not base_version or (enabled is None) == (version_id is None):
+            raise ValueError("資料の操作を選び直してください。")
+        current = self.document(document_id)
+        if version_id:
+            if not any(item["id"] == version_id for item in self.document_history(document_id)):
+                raise ValueError("選んだ資料の履歴が見つかりません。")
+            directory, manifest = self._version(version_id)
+            record = next(item for item in manifest["documents"] if item["id"] == document_id)
+            change = {**record, "content": _record_path(directory, record).read_text(encoding="utf-8")}
+            label = "資料を復元"
+        else:
+            if enabled == current.get("enabled", True):
+                raise ValueError("資料はすでにこの状態です。")
+            change = {**current, "enabled": enabled}
+            label = "資料の利用を再開" if enabled else "資料の利用を停止"
+        change.update(target_id=document_id, original=change.get("original"))
+        return self._queue("document", base_version,
+                           lambda: self._snapshot(base_version, f"{label}：{change['title']}", change))
+
     def job(self, job_id: str) -> dict:
         path = self.root / "jobs" / (_identifier(job_id) + ".json")
+        if not path.is_file():
+            raise KnowledgeJobNotFound("この操作の記録が見つかりません。")
         job = _read(path)
         if job["status"] in {"queued", "running"} and not self._busy_job():
             if job.get("target_version") and self.read_active() == job["target_version"]:
                 job.update(status="succeeded", stage="complete", progress=100, message="知識を更新できました。", result={"version_id": job["target_version"]})
             else:
-                job.update(status="failed", stage="failed", message="更新処理が中断されました。現在の知識を確認し、もう一度お試しください。", error="更新処理が中断されました。")
+                job.update(status="failed", stage="failed", message="更新処理が中断されました。現在の知識を確認し、もう一度お試しください。", error="更新処理が中断されました。", error_code="interrupted")
             _write(path, job)
         return job
 

@@ -188,6 +188,25 @@ class KnowledgeAdminTests(TestCase):
         self.assertIn("画面から変更", current["content"])
         self.assertEqual(len(self.manager.status()["documents"]), 3)
 
+    def test_upload_suggests_same_name_without_changing_the_chosen_destination(self):
+        self.initialize()
+        old = self.manager.preview(filename="案内.txt", data="旧本文".encode())
+        version = self.publish(old)
+        suggested = self.manager.preview(filename="案内.txt", data="新本文".encode(), import_mode="choose")
+        self.assertTrue(suggested["needs_target_confirmation"])
+        self.assertEqual(suggested["suggested_targets"], [{"id": old["target_id"], "title": "案内"}])
+        with self.assertRaises(ValueError):
+            self.manager.publish(suggested["preview_id"], version)
+        confirmed = self.manager.preview(
+            title=suggested["title"], content=suggested["content"],
+            source_preview_id=suggested["preview_id"], import_mode="add",
+        )
+        self.assertEqual(confirmed["action"], "add")
+        self.assertNotEqual(confirmed["target_id"], old["target_id"])
+        self.assertEqual(confirmed["original"], suggested["original"])
+        self.publish(confirmed)
+        self.assertIn("旧本文", self.manager.document(old["target_id"])["content"])
+
     def test_word_preview_reconfirmation_preserves_original_and_source_filename(self):
         self.initialize()
         archive = BytesIO()

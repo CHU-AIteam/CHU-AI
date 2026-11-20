@@ -46,6 +46,7 @@ from chu_ai.services.chat_service import FORCED_KNOWLEDGE_MODE, process_user_req
 from chu_ai.services.generation_service import normalize_recommended_questions
 from chu_ai.services.hybrid_search_service import initialize_hybrid_search_runtime
 from chu_ai.services.hybrid_store_service import has_hybrid_database_config
+from chu_ai.services.operations_service import windows_kiosk_state
 from chu_ai.knowledge_admin_api import router as knowledge_admin_router
 from chu_ai.services.log_storage_service import (
     get_log_storage_label,
@@ -147,6 +148,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "kiosk_auto_login": COMO_KIOSK_AUTO_LOGIN,
+        **windows_kiosk_state(),
         "model": GEMINI_MODEL,
         "router_enabled": ROUTER_ENABLED,
         "router_model": ROUTER_MODEL,

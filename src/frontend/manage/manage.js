@@ -4,13 +4,16 @@
   const API = "/api/admin/knowledge";
   const SESSION_KEY = "como.knowledge-admin.session";
   const MAX_FILE_BYTES = 8 * 1024 * 1024;
+  const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
+  const BACKUP_JOB_KEY = "como.knowledge-admin.backup-job";
   const $ = (id) => document.getElementById(id);
   const nodes = Object.fromEntries(Array.from(document.querySelectorAll("[id]"), (node) => [node.id, node]));
   const state = {
     key: "", connected: false, status: null, view: "import", originView: "import",
     requestBusy: false, externalBusy: false, preview: null, previewDirty: false,
-    editorTarget: null, editorReady: false, restoreVersion: null,
+    editorTarget: null, editorReady: false, editorEnabled: true, restoreVersion: null, unsaved: false,
     job: null, jobKind: "publish", pollTimer: null, statusTimer: null, statusVersion: 0,
+    backup: null, backupJob: null,
   };
 
   class AdminError extends Error {
@@ -100,7 +103,9 @@
         applyLocks();
         throw new AdminError("別の更新が行われたか、更新処理が実行中です。「最新の状態を確認」を押し、内容を確認し直してください。", 409);
       }
-      if (response.status === 503) throw new AdminError("管理画面を利用する準備が整っていません。初期設定とコモの起動状態を確認してください。", 503);
+      if (response.status === 503) {
+        throw new AdminError(safeMessage(data?.detail?.message, "管理画面を利用する準備が整っていません。初期設定とコモの起動状態を確認してください。"), 503);
+      }
       const fallback = response.status >= 500
         ? "処理を完了できませんでした。現在の知識はそのまま利用できます。起動状態を確認して、もう一度お試しください。"
         : "内容を確認できませんでした。ファイル、タイトル、反映先を確認して、もう一度お試しください。";
@@ -119,14 +124,19 @@
     document.querySelectorAll("[data-mutation]").forEach((node) => { node.disabled = unavailable || node.dataset.readOnly === "true"; });
     nodes["import-fields"].disabled = unavailable;
     nodes["edit-fields"].disabled = unavailable || !state.editorReady;
-    nodes["import-target"].disabled = unavailable || importMode() !== "replace";
+    nodes["use-replacement"].disabled = unavailable || !nodes["import-target"].value;
+    nodes["restore-doc"].disabled = unavailable || !nodes["doc-version"].value;
     nodes.initialize.disabled = disabled;
-    nodes.publish.disabled = unavailable || !state.preview || (!state.previewDirty && !nodes["publish-confirm"].checked);
-    nodes["publish-confirm"].disabled = unavailable || state.previewDirty;
+    const targetRequired = state.preview?.needs_target_confirmation;
+    nodes.publish.disabled = unavailable || !state.preview || targetRequired || (!state.previewDirty && !nodes["publish-confirm"].checked);
+    nodes["publish-confirm"].disabled = unavailable || state.previewDirty || targetRequired;
     nodes.restore.disabled = unavailable || !state.restoreVersion || !nodes["restore-confirm"].checked;
     nodes["restore-confirm"].disabled = unavailable;
     nodes["back-to-form"].disabled = disabled;
     nodes["cancel-restore"].disabled = disabled;
+    nodes["save-backup"].disabled = unavailable;
+    nodes["choose-backup"].disabled = disabled;
+    nodes["restore-backup"].disabled = disabled || !state.backup || !nodes["backup-confirm"].checked;
     document.querySelectorAll("[data-view]").forEach((node) => { node.disabled = disabled; });
     nodes.publish.textContent = state.previewDirty ? "修正内容を確認する" : "この内容をコモに反映する";
     nodes["connection-status"].textContent = disabled && state.connected ? "更新・確認中" : needsPreparation() ? "最初の準備が必要です" : "知識を更新できます";
@@ -164,13 +174,15 @@
       button.setAttribute("aria-current", String(String(item.id) === String(state.editorTarget)));
       button.disabled = item.editable === false || locked() || needsPreparation();
       button.append(make("strong", item.title || item.source_filename || item.id));
-      button.append(make("small", item.source_filename || item.id));
+      button.append(make("small", (item.enabled === false ? "利用停止中 ／ " : "") + (item.source_filename || item.id)));
       button.addEventListener("click", () => editDocument(item.id));
       nodes["document-list"].append(button);
     }
     const selected = nodes["import-target"].value;
     nodes["import-target"].replaceChildren(new Option("置き換える知識を選んでください", ""));
-    for (const item of documents()) {
+    const suggestions = new Set((state.preview?.suggested_targets || []).map((item) => item.id));
+    const sorted = [...documents()].sort((a, b) => Number(suggestions.has(b.id)) - Number(suggestions.has(a.id)));
+    for (const item of sorted) {
       if (item.editable !== false) nodes["import-target"].append(new Option(item.title || item.source_filename || item.id, String(item.id)));
     }
     if (documents().some((item) => String(item.id) === selected)) nodes["import-target"].value = selected;
@@ -209,6 +221,15 @@
     nodes.workspace.hidden = false;
     nodes.disconnect.hidden = false;
     nodes["initialize-panel"].hidden = !needsPreparation();
+    const lastJob = data.last_job;
+    const previous = lastJob?.status === "failed" || lastJob?.status === "succeeded";
+    nodes["last-operation"].hidden = !previous || !nodes["job-panel"].hidden;
+    if (previous) {
+      const label = lastJob.status === "failed" ? "前回の処理は完了しませんでした" : "前回の処理は完了しました";
+      nodes["last-operation"].textContent = formatDate(lastJob.updated_at) + " ／ " + label + "。" + safeMessage(lastJob.error, "");
+      nodes["last-operation"].dataset.tone = lastJob.status;
+    }
+    nodes.initialize.textContent = needsPreparation() && lastJob?.status === "failed" ? "もう一度準備する" : "準備をはじめる";
     nodes["last-updated"].textContent = formatDate(data.last_updated);
     if (data.last_updated) nodes["last-updated"].dateTime = data.last_updated;
     renderDocuments();
@@ -217,11 +238,14 @@
     const activeJob = data.active_job;
     const activeId = typeof activeJob === "string" ? activeJob : activeJob?.id || activeJob?.job_id;
     if (!state.job && data.busy && activeId && !["succeeded", "failed"].includes(activeJob?.status)) {
-      startWatchingJob(activeId, activeJob?.kind || "publish");
+      const kind = lastJob?.id === activeId ? lastJob.kind : activeJob?.kind;
+      startWatchingJob(activeId, kind || "publish");
     } else if (state.externalBusy) {
       nodes["connection-status"].textContent = "別の更新処理を待っています";
       clearTimeout(state.statusTimer);
       state.statusTimer = setTimeout(() => loadStatus().catch((error) => notify(error.message, "error")), 2000);
+    } else if (!state.job && pendingBackup()) {
+      startWatchingJob(pendingBackup().id, "backup");
     }
   }
 
@@ -246,7 +270,7 @@
   }
 
   function setView(view, focus = false) {
-    if (!["import", "edit", "history"].includes(view)) return;
+    if (!["import", "edit", "history", "backup"].includes(view)) return;
     state.view = view;
     nodes["preview-panel"].hidden = true;
     document.querySelectorAll("[data-view]").forEach((button) => {
@@ -264,6 +288,7 @@
     const content = nodes["preview-content"].value;
     state.editorTarget = preview.action === "replace" ? preview.target_id : null;
     state.editorReady = true;
+    nodes["document-actions"].hidden = true;
     state.preview = null;
     state.previewDirty = false;
     state.originView = "edit";
@@ -289,14 +314,6 @@
     });
   }
 
-  function importMode() { return document.querySelector('input[name="import-mode"]:checked').value; }
-  function updateTargetMode() {
-    const replacing = importMode() === "replace";
-    nodes["import-target"].hidden = !replacing;
-    nodes["import-target-label"].hidden = !replacing;
-    applyLocks();
-  }
-
   function showPreview(preview, origin) {
     if (!preview?.preview_id || typeof preview.content !== "string") throw new AdminError("読み取った内容を確認できませんでした。もう一度読み取りをお試しください。");
     state.preview = preview;
@@ -318,9 +335,237 @@
     const warnings = Array.isArray(preview.warnings) ? preview.warnings : [];
     nodes["preview-warnings"].replaceChildren(...warnings.map((warning) => make("li", safeMessage(warning, "読み取れない情報が含まれる可能性があります。反映する内容を確認してください。"))));
     nodes["preview-warnings"].hidden = !warnings.length;
+    if (replacing && preview.previous_title) {
+      nodes["preview-summary"].textContent = "「" + preview.previous_title + "」を " + source + " の内容で置き換えます。";
+    }
+    if (preview.needs_target_confirmation) {
+      nodes["preview-action"].textContent = "同じ名前の資料が登録されています";
+      nodes["preview-summary"].textContent = "置き換える資料を選ぶか、新しい資料として追加するかを選んでください。";
+    }
+    if (preview.enabled === false) {
+      nodes["preview-summary"].textContent += " この資料は利用停止中です。再開するまで回答に使われません。";
+    }
+    nodes["import-destination"].hidden = origin !== "import";
+    nodes["import-destination"].open = Boolean(preview.needs_target_confirmation);
+    nodes["destination-summary"].textContent = preview.needs_target_confirmation ? "資料の反映先を選ぶ" : "反映先を変更";
+    renderDocuments();
+    nodes["import-target"].value = replacing ? preview.target_id : (preview.suggested_targets || [])[0]?.id || "";
+    renderChanges(preview);
     renderSteps(2);
     applyLocks();
     nodes["preview-heading"].focus();
+  }
+
+  function canDiscardEdits() {
+    return !state.unsaved || window.confirm("まだコモに反映していない編集があります。編集を破棄して進みますか？");
+  }
+
+  function selectTab(view, focus = false) {
+    if (locked() || !canDiscardEdits()) return;
+    if (state.unsaved) {
+      state.unsaved = false;
+      state.editorReady = false;
+      state.editorTarget = null;
+      state.preview = null;
+      nodes["edit-title"].value = "";
+      nodes["edit-content"].value = "";
+      nodes["document-actions"].hidden = true;
+    }
+    setView(view, focus);
+    applyLocks();
+    notify();
+  }
+
+  function lineDifference(lines, other) {
+    const counts = new Map();
+    for (const line of other) counts.set(line, (counts.get(line) || 0) + 1);
+    return lines.filter((line) => {
+      const count = counts.get(line) || 0;
+      if (count) counts.set(line, count - 1);
+      return !count;
+    });
+  }
+
+  function renderChanges(preview) {
+    nodes["change-summary"].hidden = preview.action !== "replace";
+    if (preview.action !== "replace") return;
+    const before = (preview.previous_content || "").trim();
+    const after = preview.content.trim();
+    const lines = (value) => value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const oldLines = lines(before);
+    const newLines = lines(after);
+    const removed = lineDifference(oldLines, newLines);
+    const added = lineDifference(newLines, oldLines);
+    nodes["change-note"].textContent = before === after ? "本文に変更はありません。"
+      : added.length || removed.length ? "追加 " + added.length + "行 ／ 削除 " + removed.length + "行"
+      : "改行、書式、または文章の順序が変わっています。";
+    const examples = [];
+    for (const line of removed.slice(0, 6)) examples.push(make("li", "− " + line.slice(0, 180), "removed-line"));
+    for (const line of added.slice(0, 6)) examples.push(make("li", "＋ " + line.slice(0, 180), "added-line"));
+    nodes["change-lines"].replaceChildren(...examples);
+  }
+
+  async function confirmImportTarget(mode) {
+    if (!state.preview || state.originView !== "import") return;
+    await perform(async () => {
+      const target = nodes["import-target"].value;
+      if (mode === "replace" && !target) throw new AdminError("置き換える資料を選んでください。");
+      const preview = await api("/preview", { method: "POST", body: {
+        title: nodes["preview-title"].value.trim(),
+        content: nodes["preview-content"].value.trim(),
+        source_preview_id: state.preview.preview_id, import_mode: mode,
+        ...(mode === "replace" ? { target_id: target } : {}),
+      } });
+      showPreview(preview, "import");
+      notify();
+    });
+  }
+
+  async function showDocumentHistory() {
+    if (!state.editorTarget) return;
+    await perform(async () => {
+      const versions = await api("/documents/" + encodeURIComponent(state.editorTarget) + "/history");
+      const older = versions.filter((item) => !item.current);
+      nodes["doc-version"].replaceChildren(new Option(older.length ? "戻したい版を選んでください" : "以前の版はありません", ""));
+      for (const item of older) {
+        const label = formatDate(item.created_at) + " ／ " + item.title + (item.enabled ? "" : "（利用停止中）");
+        nodes["doc-version"].append(new Option(label, item.id));
+      }
+      nodes["doc-history"].hidden = false;
+    });
+  }
+
+  async function changeDocument(change) {
+    if (!state.editorTarget || !canDiscardEdits()) return;
+    const question = change.version_id ? "この資料だけ、選んだ日付の内容と利用状態に戻しますか？"
+      : change.enabled ? "この資料をコモの回答に使うようにしますか？"
+      : "この資料をコモの回答に使わないようにしますか？ 資料と履歴は残ります。";
+    if (!window.confirm(question)) return;
+    await perform(async () => {
+      const job = await api("/documents/" + encodeURIComponent(state.editorTarget) + "/change", {
+        method: "POST", body: { ...change, base_version: state.status.active_version },
+      });
+      startWatchingJob(job.job_id, "document");
+    });
+  }
+
+  function pendingBackup() {
+    if (state.backupJob) return state.backupJob;
+    try {
+      const saved = JSON.parse(localStorage.getItem(BACKUP_JOB_KEY) || "null");
+      if (/^[a-f0-9]{32}$/.test(saved?.id || "")) return saved;
+    } catch { /* Browser storage may be restricted. */ }
+    return null;
+  }
+
+  function rememberBackup(value) {
+    state.backupJob = value;
+    try {
+      if (value) localStorage.setItem(BACKUP_JOB_KEY, JSON.stringify(value));
+      else localStorage.removeItem(BACKUP_JOB_KEY);
+    } catch { /* Keep the job in the open window if storage is unavailable. */ }
+  }
+
+  function readTally() {
+    try {
+      const raw = localStorage.getItem(window.ComoFortuneTally.storageKey);
+      if (raw === null) return Object.fromEntries(window.ComoFortuneTally.ids.map((id) => [id, 0]));
+      const data = JSON.parse(raw);
+      if (data?.version !== 1 || !data.counts) return null;
+      const counts = Object.fromEntries(window.ComoFortuneTally.ids.map((id) => {
+        const value = data.counts[id];
+        return [id, Number.isSafeInteger(value) && value >= 0 ? value : 0];
+      }));
+      return Number.isSafeInteger(Object.values(counts).reduce((a, b) => a + b, 0)) ? counts : null;
+    } catch { return null; }
+  }
+
+  function finishBackup(id) {
+    const pending = pendingBackup();
+    if (pending?.id !== id) return "";
+    rememberBackup(null);
+    if (!pending.tally) return "";
+    try {
+      localStorage.setItem(window.ComoFortuneTally.storageKey, JSON.stringify({ version: 1, counts: pending.tally }));
+      return "";
+    } catch {
+      return "知識は復元できました。ブラウザーにおみくじ集計を保存できなかったため、集計は切り替えていません。";
+    }
+  }
+
+  async function saveBackup() {
+    await perform(async () => {
+      const name = "como-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      let destination = null;
+      if (typeof window.showSaveFilePicker === "function") {
+        try {
+          destination = await window.showSaveFilePicker({
+            suggestedName: name, types: [{ description: "コモのバックアップ", accept: { "application/json": [".json"] } }],
+          });
+        } catch (error) {
+          if (error.name === "AbortError") return;
+          if (error.name !== "SecurityError" && error.name !== "NotAllowedError") throw new AdminError("保存場所を開けませんでした。もう一度選んでください。");
+        }
+      }
+      const tally = readTally();
+      const archive = await api("/backup", { method: "POST", body: { tally } });
+      const blob = new Blob([JSON.stringify(archive)], { type: "application/json" });
+      if (destination) {
+        const writer = await destination.createWritable();
+        try {
+          await writer.write(blob);
+          await writer.close();
+        } catch {
+          await writer.abort().catch(() => {});
+          throw new AdminError("バックアップを保存できませんでした。USBの空き容量と書き込み設定を確認してください。");
+        }
+        notify("バックアップを保存しました。", "success");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = make("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        notify("ダウンロードしたファイルをUSBなどに移してください。");
+      }
+    });
+  }
+
+  async function chooseBackup() {
+    clearBackupReview();
+    const file = nodes["backup-file"].files[0];
+    if (!file) return;
+    await perform(async () => {
+      if (!file.size || file.size > MAX_BACKUP_BYTES) throw new AdminError("64MB以内のバックアップファイルを選んでください。");
+      let archive;
+      try { archive = JSON.parse(await file.text()); } catch { throw new AdminError("バックアップを読み取れません。ファイルを選び直してください。"); }
+      const docs = archive?.versions?.at?.(-1)?.documents;
+      if (archive?.format !== "chat-como-backup-1" || !Array.isArray(docs) || !docs.length) {
+        throw new AdminError("コモ管理から保存したバックアップファイルを選んでください。");
+      }
+      state.backup = archive;
+      nodes["backup-description"].textContent = file.name + " ／ " + formatDate(archive.created_at) + " ／ 資料 " + docs.length + " 件";
+      nodes["backup-review"].hidden = false;
+    });
+  }
+
+  function clearBackupReview() {
+    state.backup = null;
+    nodes["backup-confirm"].checked = false;
+    nodes["backup-review"].hidden = true;
+    applyLocks();
+  }
+
+  async function restoreBackup() {
+    if (!state.backup || !nodes["backup-confirm"].checked || !canDiscardEdits()) return;
+    await perform(async () => {
+      const base = state.status.active_version;
+      const url = "/backup/restore" + (base ? "?base_version=" + encodeURIComponent(base) : "");
+      const job = await api(url, { method: "POST", body: state.backup });
+      rememberBackup({ id: job.job_id, tally: state.backup.tally || null });
+      startWatchingJob(job.job_id, "backup");
+    });
   }
 
   function readBase64(file) {
@@ -333,27 +578,35 @@
   }
 
   async function importFile(event) {
-    event.preventDefault();
+    event?.preventDefault();
+    if (event && !canDiscardEdits()) return;
     await perform(async () => {
       const file = nodes["knowledge-file"].files[0];
       if (!file) throw new AdminError("USBのファイルを選んでください。");
       if (!/\.(docx|txt|md|markdown)$/i.test(file.name)) throw new AdminError("Word（.docx）、テキスト（.txt）、Markdown（.md）のファイルを選んでください。PDF・Excel・古いWord形式（.doc）は現在取り込めません。");
       if (!file.size) throw new AdminError("ファイルが空です。内容が保存されているファイルを選んでください。");
       if (file.size > MAX_FILE_BYTES) throw new AdminError("ファイルが大きすぎます。8MB以下の資料に分けて取り込んでください。");
-      const target = importMode() === "replace" ? nodes["import-target"].value : null;
-      if (importMode() === "replace" && !target) throw new AdminError("置き換える知識を選んでください。");
       notify("ファイルの内容を読み取っています。少しお待ちください。");
-      const preview = await api("/preview", { method: "POST", body: { filename: file.name, content_base64: await readBase64(file), ...(target ? { target_id: target } : {}) } });
+      const preview = await api("/preview", { method: "POST", body: { filename: file.name, content_base64: await readBase64(file), import_mode: "choose" } });
+      state.unsaved = false;
       notify();
       showPreview(preview, "import");
     });
   }
 
   async function editDocument(id) {
+    if (!canDiscardEdits()) return;
     await perform(async () => {
       const item = await api(`/documents/${encodeURIComponent(id)}`);
       state.editorTarget = item.id || id;
       state.editorReady = true;
+      state.editorEnabled = item.enabled !== false;
+      state.unsaved = false;
+      nodes["document-actions"].hidden = false;
+      nodes["document-actions"].open = false;
+      nodes["doc-history"].hidden = true;
+      nodes["doc-version"].replaceChildren();
+      nodes["set-enabled"].textContent = state.editorEnabled ? "この資料の利用を停止" : "この資料の利用を再開";
       nodes["edit-title"].value = item.title || "";
       nodes["edit-content"].value = item.content || "";
       nodes["editor-legend"].textContent = "知識の内容を編集";
@@ -365,9 +618,11 @@
   }
 
   function newDocument() {
-    if (locked() || needsPreparation()) return;
+    if (locked() || needsPreparation() || !canDiscardEdits()) return;
     state.editorTarget = null;
     state.editorReady = true;
+    state.unsaved = false;
+    nodes["document-actions"].hidden = true;
     nodes["edit-title"].value = "";
     nodes["edit-content"].value = "";
     nodes["editor-source"].textContent = "";
@@ -390,7 +645,7 @@
   }
 
   async function publish() {
-    if (!state.preview || locked()) return;
+    if (!state.preview || state.preview.needs_target_confirmation || locked()) return;
     await perform(async () => {
       if (state.previewDirty) {
         const title = nodes["preview-title"].value.trim();
@@ -438,10 +693,17 @@
     state.job = id;
     state.jobKind = kind;
     state.externalBusy = false;
+    nodes["last-operation"].hidden = true;
     nodes["job-panel"].hidden = false;
     delete nodes["job-panel"].dataset.result;
     nodes["job-open-como"].hidden = true;
-    nodes["job-title"].textContent = kind === "restore" ? "以前の知識に戻しています" : kind === "initialize" ? "最初の準備をしています" : "知識を更新しています";
+    const titles = {
+      restore: "以前の知識に戻しています",
+      initialize: "最初の準備をしています",
+      backup: "バックアップを復元しています",
+      document: "資料の状態を更新しています",
+    };
+    nodes["job-title"].textContent = titles[kind] || "知識を更新しています";
     nodes["job-state"].textContent = "準備中";
     nodes["job-message"].textContent = "処理を開始しました。完了まで少しお待ちください。";
     nodes["job-help"].textContent = "この画面で完了の表示をお待ちください。画面を開き直しても、実行中の更新は続きます。";
@@ -466,6 +728,7 @@
       state.externalBusy = false;
       nodes["job-panel"].dataset.result = job.status;
       if (job.status === "succeeded") {
+        const tallyError = finishBackup(id);
         nodes["job-progress"].value = 100;
         nodes["job-message"].textContent = state.jobKind === "restore" ? "以前の知識に戻しました。コモに質問して内容を確認してください。" : state.jobKind === "initialize" ? "準備ができました。知識の追加・編集を行えます。" : "コモに知識を反映しました。質問して内容を確認してください。";
         nodes["job-help"].textContent = "USBから取り込んだ資料は、このPCに保存されています。USBを抜いても利用できます。";
@@ -474,14 +737,20 @@
         state.previewDirty = false;
         state.editorReady = false;
         state.editorTarget = null;
+        state.unsaved = false;
+        nodes["document-actions"].hidden = true;
         state.restoreVersion = null;
         nodes["restore-panel"].hidden = true;
         nodes["publish-confirm"].checked = false;
+        clearBackupReview();
         setView(state.view);
         renderSteps(3, true);
-        notify("更新が完了しました。", "success");
+        notify(tallyError || "更新が完了しました。", tallyError ? "warning" : "success");
       } else {
-        nodes["job-help"].textContent = "現在の知識はそのまま利用できます。内容を残しているので、原因を確認した後にもう一度お試しください。";
+        if (pendingBackup()?.id === id) rememberBackup(null);
+        nodes["job-help"].textContent = state.jobKind === "initialize"
+          ? "原因を確認してから「もう一度準備する」を押してください。"
+          : "現在の知識はそのまま利用できます。原因を確認してからもう一度お試しください。";
         notify(safeMessage(job.error, "更新を完了できませんでした。コモの起動状態と資料の内容を確認して、もう一度お試しください。"), "error");
       }
       state.requestBusy = true;
@@ -490,6 +759,7 @@
     } catch (error) {
       if (state.job !== id || !state.connected) return;
       if (error.status === 404) {
+        if (pendingBackup()?.id === id) rememberBackup(null);
         state.job = null;
         state.externalBusy = false;
         notify("更新状況を確認できません。「最新の状態を確認」で、知識の状態と履歴を確認してください。", "warning");
@@ -513,33 +783,75 @@
     const job = await api("/initialize", { method: "POST" });
     startWatchingJob(job.job_id || job.id, "initialize");
   }));
-  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { if (!locked()) { setView(button.dataset.view); notify(); } }));
+  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.view)));
   document.querySelector('.view-tabs').addEventListener("keydown", (event) => {
     const tabs = Array.from(document.querySelectorAll("[data-view]"));
     const index = tabs.indexOf(document.activeElement);
     if (index < 0 || locked() || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-    setView(tabs[next].dataset.view, true);
+    selectTab(tabs[next].dataset.view, true);
   });
-  nodes["choose-file"].addEventListener("click", () => nodes["knowledge-file"].click());
+  nodes["choose-file"].addEventListener("click", () => {
+    if (!canDiscardEdits()) return;
+    nodes["knowledge-file"].value = "";
+    nodes["file-selection"].textContent = "ファイルはまだ選ばれていません";
+    nodes["read-file"].hidden = true;
+    nodes["knowledge-file"].click();
+  });
   nodes["knowledge-file"].addEventListener("change", () => {
     const file = nodes["knowledge-file"].files[0];
     nodes["file-selection"].textContent = file ? `${file.name}（${(file.size / 1024).toLocaleString("ja-JP", { maximumFractionDigits: 0 })} KB）` : "ファイルはまだ選ばれていません";
     renderSteps(1);
+    nodes["read-file"].hidden = !file;
+    if (file) void importFile();
   });
-  document.querySelectorAll('input[name="import-mode"]').forEach((radio) => radio.addEventListener("change", updateTargetMode));
+  nodes["import-target"].addEventListener("change", applyLocks);
+  nodes["use-replacement"].addEventListener("click", () => confirmImportTarget("replace"));
+  nodes["use-add"].addEventListener("click", () => confirmImportTarget("add"));
   nodes["import-form"].addEventListener("submit", importFile);
   nodes["document-filter"].addEventListener("input", () => { renderDocuments(); applyLocks(); });
   nodes["new-document"].addEventListener("click", newDocument);
   nodes["edit-form"].addEventListener("submit", previewEdit);
-  nodes["back-to-form"].addEventListener("click", () => { setView(state.originView); renderSteps(1); });
-  for (const id of ["preview-title", "preview-content"]) nodes[id].addEventListener("input", () => { state.previewDirty = true; nodes["publish-confirm"].checked = false; applyLocks(); });
+  nodes["back-to-form"].addEventListener("click", () => {
+    if (state.unsaved && state.originView === "import" && !canDiscardEdits()) return;
+    if (state.unsaved && state.originView === "edit") {
+      nodes["edit-title"].value = nodes["preview-title"].value;
+      nodes["edit-content"].value = nodes["preview-content"].value;
+    } else { state.unsaved = false; }
+    setView(state.originView);
+    renderSteps(1);
+  });
+  for (const id of ["edit-title", "edit-content"]) nodes[id].addEventListener("input", () => { state.unsaved = true; });
+  for (const id of ["preview-title", "preview-content"]) nodes[id].addEventListener("input", () => {
+    state.unsaved = true;
+    state.previewDirty = true;
+    nodes["publish-confirm"].checked = false;
+    applyLocks();
+  });
   nodes["publish-confirm"].addEventListener("change", applyLocks);
   nodes.publish.addEventListener("click", publish);
   nodes["restore-confirm"].addEventListener("change", applyLocks);
   nodes.restore.addEventListener("click", restore);
   nodes["cancel-restore"].addEventListener("click", () => { state.restoreVersion = null; nodes["restore-panel"].hidden = true; });
+  nodes["set-enabled"].addEventListener("click", () => changeDocument({ enabled: !state.editorEnabled }));
+  nodes["show-doc-history"].addEventListener("click", showDocumentHistory);
+  nodes["doc-version"].addEventListener("change", applyLocks);
+  nodes["restore-doc"].addEventListener("click", () => changeDocument({ version_id: nodes["doc-version"].value }));
+  nodes["save-backup"].addEventListener("click", saveBackup);
+  nodes["choose-backup"].addEventListener("click", () => {
+    nodes["backup-file"].value = "";
+    nodes["backup-file"].click();
+  });
+  nodes["backup-file"].addEventListener("change", chooseBackup);
+  nodes["backup-confirm"].addEventListener("change", applyLocks);
+  nodes["cancel-backup"].addEventListener("click", clearBackupReview);
+  nodes["restore-backup"].addEventListener("click", restoreBackup);
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.unsaved || state.job) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   window.addEventListener("pagehide", clearTimers);
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted || !state.connected) return;
@@ -547,7 +859,7 @@
   });
 
   const key = takeInitialKey();
-  updateTargetMode();
+  applyLocks();
   renderSteps(1);
   if (key) connect(key);
 })();

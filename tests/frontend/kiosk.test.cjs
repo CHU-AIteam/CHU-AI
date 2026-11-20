@@ -20,6 +20,7 @@ for (const [name, enabled, search, expected] of [
       fetch: async () => ({ ok: true, json: async () => ({ kiosk_auto_login: enabled }) }),
       window: { location: { search } }, URLSearchParams,
       HEALTH_URL: '/api/health', configuredKioskAutoLogin: false,
+      managedKiosk: false,
       configuredInactivityResetSeconds: 30, configuredHistoryMaxExchanges: 5, configuredHistoryWindowMs: 120000,
       pruneExchangeHistory() {}, resetQuickQuestions() {}, bindEvents() {}, initAvatarPuppet() {},
       screenPassword: 'password', passwordInput: { focus() {} },

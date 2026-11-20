@@ -1,0 +1,6 @@
+services:
+  chu-ai:
+    image: ${COMO_WINDOWS_IMAGE:?}
+    pull_policy: never
+    environment:
+      COMO_WINDOWS_REVISION: ${COMO_WINDOWS_REVISION:?}
