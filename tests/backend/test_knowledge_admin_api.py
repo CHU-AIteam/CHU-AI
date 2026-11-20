@@ -79,7 +79,7 @@ class KnowledgeAdminApiTests(TestCase):
         with mock.patch.object(api, "CHAT_LOG_ADMIN_API_KEY", ""):
             response = self.client.get(PREFIX + "/status", headers=self.headers)
         self.assertEqual(response.status_code, 503)
-        self.assertIn("初回セットアップ", response.json()["detail"])
+        self.assertIn("最初の設定", response.json()["detail"])
         self.manager.status.assert_not_called()
 
     def test_remote_host_and_foreign_origins_are_forbidden(self):
@@ -193,7 +193,7 @@ class KnowledgeAdminApiTests(TestCase):
             self.assertNotIn(SECRET, text)
             self.assertNotIn(dsn, text)
             self.assertNotIn("private-db", text)
-        self.assertIn("初期設定", response.json()["detail"])
+        self.assertIn("「コモを開く」", response.json()["detail"])
 
     def test_connection_check_reports_provider_error_without_returning_its_text(self):
         class RateLimit(RuntimeError):

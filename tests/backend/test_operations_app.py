@@ -13,7 +13,7 @@ class OperationsAppTests(unittest.TestCase):
     def test_management_and_print_guide_are_served(self):
         response = self.client.get('/manage/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('知識', response.text)
+        self.assertIn('案内を更新する', response.text)
         self.assertEqual(self.client.get('/manage/manage.js').status_code, 200)
         self.assertEqual(self.client.get('/manage/manage.css').status_code, 200)
         guide = self.client.get('/manage/guide.html')

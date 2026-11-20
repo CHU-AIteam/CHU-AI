@@ -47,7 +47,7 @@ class KnowledgeImportTests(TestCase):
         result = service.import_knowledge_file("貸出ルール.txt", "学生証を持参してください。".encode("cp932"))
         self.assertEqual(result["title"], "貸出ルール")
         self.assertEqual(result["content"], "学生証を持参してください。")
-        self.assertIn("Shift_JIS", result["warnings"][0])
+        self.assertIn("文字が崩れていないか", result["warnings"][0])
 
     def test_utf16_bom(self):
         result = service.import_knowledge_file("案内.txt", "日本語のご案内".encode("utf-16"))
@@ -89,7 +89,7 @@ class KnowledgeImportTests(TestCase):
         result = service.import_knowledge_file("図入り.docx", word(body, extras={"word/media/image1.png": b"not-a-real-image", "word/header1.xml": b"<header/>"}))
         self.assertEqual(result["content"], "読み取れる本文")
         self.assertTrue(any("画像" in warning for warning in result["warnings"]))
-        self.assertTrue(any("ヘッダー" in warning for warning in result["warnings"]))
+        self.assertTrue(any("ページの上や下" in warning for warning in result["warnings"]))
 
     def test_tracked_deleted_text_is_excluded_and_insertions_are_warned(self):
         body = '<w:p><w:r><w:t>現在は</w:t></w:r><w:del><w:r><w:delText>17時</w:delText></w:r></w:del><w:ins><w:r><w:t>18時</w:t></w:r></w:ins><w:r><w:t>まで。</w:t></w:r></w:p>'
@@ -128,7 +128,7 @@ class KnowledgeImportTests(TestCase):
         for prefix in ['<!DOCTYPE w:document [<!ENTITY text "anything">]>', '<!DOCTYPE w:document SYSTEM "file:///etc/passwd">']:
             xml = prefix + f'<w:document xmlns:w="{W}"><w:body>{paragraph("test")}</w:body></w:document>'
             for encoding in ["utf-8", "utf-16"]:
-                with self.subTest(encoding=encoding), self.assertRaisesRegex(ValueError, "XML定義"):
+                with self.subTest(encoding=encoding), self.assertRaisesRegex(ValueError, "Wordで開いて保存し直して"):
                     service.import_knowledge_file("定義.docx", word(document=xml.encode(encoding)))
 
     def test_archive_path_traversal_absolute_symlink_and_duplicate_members_are_rejected(self):

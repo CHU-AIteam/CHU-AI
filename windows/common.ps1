@@ -123,6 +123,40 @@ function New-ComoError([string]$Message, [string]$Code, [int]$HttpStatus = 0) {
     return $errorValue
 }
 
+function Get-ComoFailureNotice($Failure) {
+    $message = [string](Get-ComoValue $Failure 'message' '')
+    if (-not $message) { return '' }
+    $operation = Get-ComoValue $Failure 'operation' ''
+    $notice = switch (Get-ComoValue $Failure 'code' '') {
+        'gemini_key' { 'コモをつなぐためのコードを使えませんでした。担当者から受け取ったコードを確かめてください。' }
+        'gemini_limit' { '質問に答えるために使える量が上限に達しました。時間をおいて、もう一度試してください。' }
+        'gemini_model' { '今の設定では、コモが質問に答えられません。設置を担当した人に記録を渡してください。' }
+        'network' { '質問に答えるための通信ができませんでした。パソコンがインターネットにつながっているか確かめてください。' }
+        'settings' { 'コモを開くための設定を確かめる必要があります。「最初の設定を見直す」を押してください。' }
+        'software' { 'このパソコンで使い始めるための準備が残っています。設置を担当した人に記録を渡してください。' }
+        'docker' { 'コモを開くための準備が終わりませんでした。少し待って、もう一度試してください。' }
+        'port' { '別のアプリが動いているため、コモを開けませんでした。設置を担当した人に記録を渡してください。' }
+        'git' { 'コモの更新を確かめられませんでした。インターネットを確かめ、続くときは担当者に記録を渡してください。' }
+        'database' { 'コモが使う案内を読み出せませんでした。「もう一度試す」を押してください。' }
+        'storage' { '案内をこのパソコンに保存できませんでした。設置を担当した人に記録を渡してください。' }
+        'busy' { '案内を変えている途中です。「案内を更新する」で終わったことを確かめてから、もう一度試してください。' }
+        'knowledge_wait' { '案内の準備が続いています。「案内を更新する」で様子を確かめられます。' }
+        'browser' {
+            if ($operation -eq 'Stop') { 'コモの画面を閉じられませんでした。コモの画面を閉じてから「今日の利用を終える」を押してください。' }
+            else { 'コモの画面を開いたことを確かめられませんでした。画面の下にコモのアイコンがないか確かめてください。' }
+        }
+        'release' {
+            if ($operation -eq 'Rollback') { 'ひとつ前のコモを開けませんでした。「コモ本体を更新する」で今届いているコモを用意できます。' }
+            else { '選んだコモを開けませんでした。「コモ本体を更新する」から、もう一度試せます。' }
+        }
+        default { '準備を最後まで終えられませんでした。少し待って、もう一度試してください。' }
+    }
+    if ($message -match '前の(?:版|コモ)に戻しました') {
+        return ('更新が終わらなかったため、前のコモに戻しました。' + $notice)
+    }
+    return $notice
+}
+
 function Get-ComoId {
     $hash = [Security.Cryptography.SHA256]::Create()
     try { return ([BitConverter]::ToString($hash.ComputeHash($script:ComoUtf8.GetBytes($script:ComoRoot.ToLowerInvariant()))).Replace('-', '').Substring(0, 12)) } finally { $hash.Dispose() }
@@ -175,7 +209,7 @@ function Invoke-ComoProcess([string]$Executable, [string[]]$Arguments, [int]$Tim
         $stderr = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             $process.Kill()
-            throw '処理が時間内に終わりませんでした。ネットワーク接続とDocker Desktopを確認してください。'
+            throw (New-ComoError '準備が時間内に終わりませんでした。インターネットにつながっているか確かめてください。' 'timed_out')
         }
         $result = @{ exit_code = $process.ExitCode; output = $stdout.Result; error = $stderr.Result }
         if (-not $Quiet) {
@@ -184,7 +218,7 @@ function Invoke-ComoProcess([string]$Executable, [string[]]$Arguments, [int]$Tim
             }
         }
         if ($AllowedExitCodes -notcontains $process.ExitCode) {
-            $message = '処理を完了できませんでした。コモ管理から再試行してください。'
+            $message = '準備を最後まで終えられませんでした。コモ管理からもう一度試せます。'
             $code = 'command'
             if ($result.error -match '(?i)port is already allocated|address already in use|ports are not available') {
                 $message = '必要なポートを別のアプリが使っています。開発担当者に起動中のアプリを確認してもらってください。'
@@ -311,18 +345,18 @@ function Wait-ComoKnowledge([string]$Operation) {
     $jobId = ''
     while (Get-ComoValue $state 'initialization_required' $true) {
         if ([DateTime]::UtcNow -ge $deadline) {
-            throw (New-ComoError '知識の準備が続いています。「知識を更新」で進み具合を確認できます。' 'knowledge_wait')
+            throw (New-ComoError '案内の準備が続いています。「案内を更新する」で様子を確かめられます。' 'knowledge_wait')
         }
         $jobId = [string](Get-ComoValue $state 'active_job' '')
         if ($jobId) { break }
         if (Get-ComoValue $state 'busy' $false) {
-            Write-ComoStep $Operation '知識の準備' '進行中の知識の処理を待っています。'
+            Write-ComoStep $Operation '案内を準備する' 'コモが案内を使えるようになるまでお待ちください。'
         } else {
-            Write-ComoStep $Operation '知識の準備' '初回の知識を検索できるようにしています。'
+            Write-ComoStep $Operation '案内を準備する' 'コモが最初の案内を使えるように準備しています。'
             try {
                 $started = Invoke-ComoApi '/api/admin/knowledge/initialize' 'POST' 30
                 $jobId = [string](Get-ComoValue $started 'job_id' '')
-                if (-not $jobId) { throw (New-ComoError '知識の準備を開始できませんでした。「知識を更新」で状態を確認してください。' 'knowledge') }
+                if (-not $jobId) { throw (New-ComoError '案内の準備を始められませんでした。「案内を更新する」で様子を確かめてください。' 'knowledge') }
                 break
             } catch {
                 if ($_.Exception.Data['http_status'] -ne 409) { throw }
@@ -336,24 +370,24 @@ function Wait-ComoKnowledge([string]$Operation) {
         Start-Sleep -Seconds 2
         $job = Invoke-ComoApi ('/api/admin/knowledge/jobs/' + [Uri]::EscapeDataString($jobId))
         $status = [string](Get-ComoValue $job 'status' '')
-        $message = [string](Get-ComoValue $job 'message' '知識の検索データを準備しています。')
+        $message = [string](Get-ComoValue $job 'message' 'コモが案内を使えるように準備しています。')
         if ($status -eq 'succeeded') {
             $state = Get-ComoKnowledgeState
             if (-not (Get-ComoValue $state 'initialization_required' $true)) { return $state }
-            throw (New-ComoError '知識の準備が反映されたか確認できません。「知識を更新」で状態を確認してください。' 'knowledge')
+            throw (New-ComoError '案内の準備が終わったか分かりません。「案内を更新する」で様子を確かめてください。' 'knowledge')
         }
         if ($status -eq 'failed') {
             throw (New-ComoError $message ([string](Get-ComoValue $job 'error_code' 'knowledge')))
         }
-        Write-ComoStep $Operation '知識の準備' $message ([int](Get-ComoValue $job 'progress' -1))
+        Write-ComoStep $Operation '案内を準備する' $message ([int](Get-ComoValue $job 'progress' -1))
     } while ([DateTime]::UtcNow -lt $deadline)
-    throw (New-ComoError '知識の準備が続いています。「知識を更新」で進み具合を確認できます。' 'knowledge_wait')
+    throw (New-ComoError '案内の準備が続いています。「案内を更新する」で様子を確かめられます。' 'knowledge_wait')
 }
 
 function Assert-ComoKnowledgeIdle {
     try { $state = Get-ComoKnowledgeState } catch { return }
     if (Get-ComoValue $state 'busy' $false) {
-        throw (New-ComoError '知識の更新中です。「知識を更新」で完了を確認してから操作してください。' 'busy')
+        throw (New-ComoError '案内を変えている途中です。「案内を更新する」で終わったことを確かめてから、もう一度試してください。' 'busy')
     }
 }
 
@@ -368,25 +402,26 @@ function Update-ComoRuntime {
     $release = Read-ComoJson $script:ComoReleasePath
     $setup = Read-ComoJson $script:ComoSetupPath
     $state = $null
-    $message = 'コモへの接続を確認できません。「コモを開く」で起動できます。'
+    $paused = [bool](Get-ComoValue $health 'kiosk_chat_paused' $false)
+    $message = 'コモはまだ開いていません。「コモを開く」を押してください。'
     if ($null -ne $health) {
         try { $state = Get-ComoKnowledgeState } catch { }
-        if (Get-ComoValue $health 'kiosk_chat_paused' $false) {
-            $message = 'コモは起動中です。質問の受付を休止しています。'
+        if ($paused) {
+            $message = 'コモの画面を開けます。いまは質問への回答をお休みしています。'
         } elseif ($null -eq $state) {
-            $message = 'コモは起動中です。知識の状態を確認できません。'
+            $message = 'コモの画面を開けます。質問に答える準備ができたか分かりません。'
         } elseif (Get-ComoValue $state 'initialization_required' $true) {
-            $message = 'コモは起動中です。知識の準備が必要です。'
+            $message = 'コモが質問に答えるには、案内の準備が必要です。'
         } else {
-            $message = 'コモを利用できます。'
+            $message = 'コモを使えます。'
         }
     } elseif ((Get-ComoValue $operation 'operation') -eq 'Stop' -and (Get-ComoValue $operation 'phase') -eq 'succeeded') {
-        $message = '利用を終了しました。'
+        $message = '今日の利用を終えました。パソコンの電源を切って大丈夫です。'
     }
     $runningRevision = ''
     if ($null -ne $health) { $runningRevision = if ($revision) { $revision } else { '旧版' } }
     Write-ComoJson $script:ComoRuntimePath @{
-        message = $message; server_up = ($null -ne $health)
+        message = $message; server_up = ($null -ne $health); chat_paused = $paused
         initialized = (Get-ComoValue $state 'initialized' $false)
         last_updated = (Get-ComoValue $state 'last_updated')
         running_revision = $runningRevision

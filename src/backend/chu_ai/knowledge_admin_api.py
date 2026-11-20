@@ -24,15 +24,15 @@ def require_knowledge_admin(request: Request, x_admin_key: str | None = Header(d
         origin = request.headers.get("origin")
         origin_host = urlsplit(origin).hostname if origin else None
     except ValueError as error:
-        raise HTTPException(403, "設置PCの管理画面を開き直してください。") from error
+        raise HTTPException(403, "コモが置いてあるパソコンの「コモ管理」から開き直してください。") from error
     if hostname not in {"localhost", "127.0.0.1", "::1"}:
-        raise HTTPException(403, "知識更新は設置PCのコモ管理から操作してください。")
+        raise HTTPException(403, "コモが置いてあるパソコンで「案内を更新する」を押してください。")
     if origin and (origin_host not in {"localhost", "127.0.0.1", "::1"} or origin != f"{request.url.scheme}://{request.headers.get('host')}"):
-        raise HTTPException(403, "設置PCの管理画面を開き直してください。")
+        raise HTTPException(403, "コモが置いてあるパソコンの「コモ管理」から開き直してください。")
     if not CHAT_LOG_ADMIN_API_KEY:
-        raise HTTPException(503, "初回セットアップで管理用の設定を済ませてください。")
+        raise HTTPException(503, "コモを使うための最初の設定を済ませてください。")
     if not x_admin_key or not secrets.compare_digest(x_admin_key.encode("utf-8"), CHAT_LOG_ADMIN_API_KEY.encode("utf-8")):
-        raise HTTPException(401, "管理画面をコモ管理から開き直してください。")
+        raise HTTPException(401, "「コモ管理」で「案内を更新する」を押してください。")
 
 
 router = APIRouter(prefix="/api/admin/knowledge", dependencies=[Depends(require_knowledge_admin)])
@@ -81,7 +81,7 @@ def _call(method, *args, **kwargs):
         raise HTTPException(400, str(error)) from error
     except Exception as error:
         print(f"Knowledge management unavailable: {type(error).__name__}")
-        raise HTTPException(503, "知識の保存先に接続できません。コモ管理で起動状態と初期設定を確認してください。") from error
+        raise HTTPException(503, "案内を読み出せませんでした。「コモ管理」で「コモを開く」を押してから、もう一度試してください。") from error
 
 
 @router.get("/status")
